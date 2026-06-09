@@ -694,7 +694,8 @@ router.get('/statements/:accountId', authMiddleware, (req, res) => {
         const start = startDate || new Date(Date.now() - 90 * 86400000).toISOString().split('T')[0];
         const end = endDate || new Date().toISOString().split('T')[0];
         const txns = bankingDb.getTransactionsByDateRange(req.user.id, start, end, 500);
-        const accountTxns = txns.filter(t => t.from_account == req.params.accountId || t.to_account == req.params.accountId);
+        const accountIdNum = Number(req.params.accountId);
+        const accountTxns = txns.filter(t => Number(t.from_account) === accountIdNum || Number(t.to_account) === accountIdNum);
 
         const openingBalance = account.balance + accountTxns
             .filter(t => ['debit', 'transfer', 'upi', 'neft', 'imps'].includes(t.type))
