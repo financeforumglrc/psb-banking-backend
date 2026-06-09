@@ -354,4 +354,119 @@ router.get('/me', authMiddleware, (req, res) => {
     }
 });
 
+/**
+ * @route   POST /api/v1/auth/face-register
+ * @desc    Register face descriptor for biometric login
+ * @access  Private
+ */
+router.post('/face-register', authMiddleware, (req, res) => {
+    try {
+        const { descriptor } = req.body;
+        if (!descriptor || !Array.isArray(descriptor)) {
+            return res.status(400).json({ success: false, error: 'Face descriptor array is required', code: 'FACE_DESCRIPTOR_MISSING' });
+        }
+        if (descriptor.length !== 128) {
+            return res.status(400).json({ success: false, error: 'Descriptor must have 128 floats', code: 'INVALID_DESCRIPTOR' });
+        }
+        userDb.updateFaceDescriptor(req.user.id, JSON.stringify(descriptor));
+        res.json({ success: true, message: 'Face registered successfully' });
+    } catch (error) {
+        console.error('Face register error:', error);
+        res.status(500).json({ success: false, error: 'Face registration failed', code: 'FACE_REGISTER_ERROR' });
+    }
+});
+
+function euclideanDistance(a, b) {
+    let sum = 0;
+    for (let i = 0; i < a.length; i++) {
+        const diff = a[i] - b[i];
+        sum += diff * diff;
+    }
+    return Math.sqrt(sum);
+}
+
+/**
+ * @route   POST /api/v1/auth/face-verify
+ * @desc    Verify face descriptor and login
+ * @access  Public
+ */
+router.post('/face-verify', authLimiter, (req, res) => {
+    try {
+        const { descriptor, email } = req.body;
+        if (!descriptor || !Array.isArray(descriptor)) {
+            return res.status(400).json({ success: false, error: 'Face descriptor array is required', code: 'FACE_DESCRIPTOR_MISSING' });
+        }
+
+        // If email provided, only check that user; otherwise scan all registered faces
+        let candidates = [];
+        if (email) {
+            const user = userDb.findByEmail(email);
+            if (user && user.face_descriptor) candidates.push(user);
+        } else {
+            candidates = userDb.findByFaceDescriptor();
+        }
+
+        if (candidates.length === 0) {
+            return res.status(401).json({ success: false, error: 'No registered face found', code: 'FACE_NOT_REGISTERED' });
+        }
+
+        const THRESHOLD = 0.6; // face-api.js typical threshold
+        let bestMatch = null;
+        let bestDistance = Infinity;
+
+        for (const user of candidates) {
+            try {
+                const stored = JSON.parse(user.face_descriptor);
+                if (!Array.isArray(stored) || stored.length !== 128) continue;
+                const dist = euclideanDistance(descriptor, stored);
+                if (dist < bestDistance) {
+                    bestDistance = dist;
+                    bestMatch = user;
+                }
+            } catch {
+                continue;
+            }
+        }
+
+        if (!bestMatch || bestDistance > THRESHOLD) {
+            return res.status(401).json({ success: false, error: 'Face not recognized', code: 'FACE_MISMATCH', distance: bestDistance });
+        }
+
+        userDb.updateLastLogin(bestMatch.id);
+
+        const accessToken = jwt.sign(
+            { id: bestMatch.id, email: bestMatch.email, role: bestMatch.role || 'user', tier: bestMatch.tier || 'free' },
+            process.env.JWT_SECRET,
+            { expiresIn: process.env.JWT_EXPIRE || '7d' }
+        );
+
+        const refreshToken = jwt.sign(
+            { id: bestMatch.id, type: 'refresh' },
+            process.env.JWT_SECRET,
+            { expiresIn: process.env.JWT_REFRESH_EXPIRE || '30d' }
+        );
+
+        const expiresAt = new Date();
+        expiresAt.setDate(expiresAt.getDate() + 30);
+        sessionDb.create({
+            userId: bestMatch.id,
+            refreshToken: refreshToken,
+            expiresAt: expiresAt.toISOString()
+        });
+
+        res.json({
+            success: true,
+            message: 'Face login successful',
+            data: {
+                user: { id: bestMatch.id, email: bestMatch.email, name: bestMatch.name, role: bestMatch.role || 'user', tier: bestMatch.tier || 'free' },
+                tokens: { accessToken, refreshToken, expiresIn: '7d' },
+                confidence: bestDistance
+            }
+        });
+    } catch (error) {
+        console.error('Face verify error:', error);
+        res.status(500).json({ success: false, error: 'Face verification failed', code: 'FACE_VERIFY_ERROR' });
+    }
+});
+
 module.exports = router;

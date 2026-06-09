@@ -344,6 +344,15 @@ function initializeDatabase() {
         CREATE INDEX IF NOT EXISTS idx_recurring_user ON recurring_payments(user_id);
         CREATE INDEX IF NOT EXISTS idx_audit_user ON audit_logs(user_id, created_at);
     `);
+
+    // Migration: add face_descriptor column for biometric login
+    try {
+        db.exec(`ALTER TABLE users ADD COLUMN face_descriptor TEXT`);
+        console.log('Migration applied: added face_descriptor column');
+    } catch (e) {
+        // Column likely already exists
+    }
+
     console.log('SQLite database initialized');
 }
 
@@ -374,6 +383,16 @@ const userDb = {
     updateApiUsage: (id, total, month) => {
         const stmt = db.prepare('UPDATE users SET api_usage_total = ?, api_usage_month = ? WHERE id = ?');
         return stmt.run(total, month, id);
+    },
+
+    updateFaceDescriptor: (id, descriptor) => {
+        const stmt = db.prepare('UPDATE users SET face_descriptor = ? WHERE id = ?');
+        return stmt.run(descriptor, id);
+    },
+
+    findByFaceDescriptor: () => {
+        const stmt = db.prepare('SELECT id, email, name, role, tier, face_descriptor FROM users WHERE face_descriptor IS NOT NULL');
+        return stmt.all();
     }
 };
 
