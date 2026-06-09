@@ -818,7 +818,7 @@ router.post('/seed', (req, res) => {
             db.prepare('DELETE FROM goals WHERE user_id = ?').run(userId);
             db.prepare('DELETE FROM transactions WHERE user_id = ?').run(userId);
             db.prepare('DELETE FROM bank_accounts WHERE user_id = ?').run(userId);
-            db.prepare('DELETE FROM kyc WHERE user_id = ?').run(userId);
+            db.prepare('DELETE FROM kyc_records WHERE user_id = ?').run(userId);
         } else {
             const existing = bankingDb.getAccountsByUser(userId);
             if (existing.length > 0) {
