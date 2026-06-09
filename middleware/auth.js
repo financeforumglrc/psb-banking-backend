@@ -22,8 +22,8 @@ const authMiddleware = (req, res, next) => {
         const authHeader = req.headers.authorization;
         const devEmail = req.headers['x-dev-user-email'];
 
-        // Dev/demo mode: allow x-dev-user-email header for hackathon demos
-        if (devEmail && process.env.NODE_ENV !== 'production') {
+        // Dev/demo mode: allow x-dev-user-email header for hackathon demos (enabled in production for judge demos)
+        if (devEmail) {
             let user = userDb.findByEmail(devEmail);
             if (!user) {
                 const { v4: uuidv4 } = require('crypto');
