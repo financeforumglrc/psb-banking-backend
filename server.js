@@ -191,7 +191,7 @@ app.use('/api/v1/market', marketDataRoutes);
 app.use('/api/v1/scenarios', scenarioRoutes);
 app.use('/api/v1/query', nlpQueryRoutes);
 app.use('/api/v1/screener', screenerRoutes);
-app.use('/api/v1/banking', authMiddleware, bankingRoutes);
+app.use('/api/v1/banking', bankingRoutes);
 app.use('/api/v1/kyc', authMiddleware, kycRoutes);
 
 // Patent information endpoint
