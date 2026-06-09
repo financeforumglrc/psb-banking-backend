@@ -676,7 +676,33 @@ router.delete('/recurring/:id', authMiddleware, (req, res) => {
 router.get('/audit', authMiddleware, (req, res) => {
     try {
         const limit = parseInt(req.query.limit) || 100;
-        const data = bankingDb.getAuditLogsByUser(req.user.id, limit);
+        const rows = bankingDb.getAuditLogsByUser(req.user.id, limit);
+        // Map DB columns to frontend expected shape (details = human-readable summary)
+        const data = rows.map(row => {
+            let detailsText = row.new_value || row.old_value || '-';
+            try {
+                const parsed = JSON.parse(detailsText);
+                if (parsed.description) detailsText = parsed.description;
+                else if (parsed.note) detailsText = parsed.note;
+                else if (parsed.name && parsed.amount) detailsText = `${parsed.name} — ₹${parsed.amount.toLocaleString?.() || parsed.amount}`;
+                else if (parsed.name) detailsText = parsed.name;
+                else if (parsed.type && parsed.amount) detailsText = `${parsed.type.toUpperCase()} — ₹${parsed.amount.toLocaleString?.() || parsed.amount}`;
+                else detailsText = JSON.stringify(parsed).slice(0, 120);
+            } catch {
+                // keep as string
+            }
+            return {
+                id: row.id,
+                action: row.action,
+                entity_type: row.entity_type,
+                entity_id: row.entity_id,
+                details: detailsText,
+                ip_address: row.ip_address,
+                user_agent: row.user_agent,
+                status: 'success',
+                created_at: row.created_at
+            };
+        });
         res.json({ success: true, data });
     } catch (err) {
         res.status(500).json({ success: false, error: err.message });
