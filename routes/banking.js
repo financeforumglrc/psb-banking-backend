@@ -786,7 +786,7 @@ router.get('/dashboard', authMiddleware, (req, res) => {
 });
 
 // ========== SEED (for judge demos) ==========
-router.post('/seed', authMiddleware, (req, res) => {
+router.post('/seed', (req, res) => {
     try {
         const userId = req.user.id;
         const existing = bankingDb.getAccountsByUser(userId);
