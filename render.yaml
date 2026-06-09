@@ -1,0 +1,24 @@
+services:
+  - type: web
+    name: psb-banking-backend
+    runtime: node
+    plan: free
+    buildCommand: npm install
+    startCommand: node server.js
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 10000
+      - key: JWT_SECRET
+        generateValue: true
+      - key: ADMIN_PASSWORD
+        value: dsf-admin-2024
+      - key: GEMINI_API_KEY
+        value: 
+      - key: DATABASE_PATH
+        value: /data/ds_financial.db
+    disk:
+      name: sqlite-data
+      mountPath: /data
+      sizeGB: 1
