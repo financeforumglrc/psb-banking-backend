@@ -803,96 +803,201 @@ router.post('/seed', (req, res) => {
     try {
         const user = resolveDemoUser(req);
         const userId = user.id;
-        const existing = bankingDb.getAccountsByUser(userId);
-        if (existing.length > 0) {
-            return res.json({ success: true, message: 'User already has data' });
+        const force = req.query.force === 'true' || req.body.force === true;
+
+        if (force) {
+            // Clear existing user demo data so re-seeding works without duplicates
+            db.prepare('DELETE FROM audit_logs WHERE user_id = ?').run(userId);
+            db.prepare('DELETE FROM recurring_payments WHERE user_id = ?').run(userId);
+            db.prepare('DELETE FROM loans WHERE user_id = ?').run(userId);
+            db.prepare('DELETE FROM beneficiaries WHERE user_id = ?').run(userId);
+            db.prepare('DELETE FROM user_assets WHERE user_id = ?').run(userId);
+            db.prepare('DELETE FROM cards WHERE user_id = ?').run(userId);
+            db.prepare('DELETE FROM subscriptions WHERE user_id = ?').run(userId);
+            db.prepare('DELETE FROM bills WHERE user_id = ?').run(userId);
+            db.prepare('DELETE FROM goals WHERE user_id = ?').run(userId);
+            db.prepare('DELETE FROM transactions WHERE user_id = ?').run(userId);
+            db.prepare('DELETE FROM bank_accounts WHERE user_id = ?').run(userId);
+            db.prepare('DELETE FROM kyc WHERE user_id = ?').run(userId);
+        } else {
+            const existing = bankingDb.getAccountsByUser(userId);
+            if (existing.length > 0) {
+                return res.json({ success: true, message: 'User already has data' });
+            }
         }
 
-        // Create savings account
+        // Audit helper
+        const audit = (action, entityType, entityId, newValue) => {
+            bankingDb.createAuditLog({
+                userId, action, entityType, entityId,
+                newValue: newValue ? JSON.stringify(newValue) : null,
+                ipAddress: req.ip || req.socket?.remoteAddress || null,
+                userAgent: req.headers['user-agent'] || null
+            });
+        };
+
+        // Create savings account with high balance to cover demo outflows
         const accResult = bankingDb.createAccount({
-            userId, accountNumber: 'PSB' + Date.now(), type: 'savings', balance: 525000,
+            userId, accountNumber: 'PSB' + Date.now(), type: 'savings', balance: 1000000,
             ifsc: 'PSB0001234', branch: 'Connaught Place, New Delhi', status: 'active'
         });
         const accountId = accResult.lastInsertRowid;
+        audit('CREATE', 'account', accountId, { type: 'savings', balance: 1000000 });
 
         // Create FD
-        bankingDb.createAccount({
+        const fdResult = bankingDb.createAccount({
             userId, accountNumber: 'PSB' + (Date.now() + 1), type: 'fixed_deposit', balance: 200000,
             ifsc: 'PSB0001234', branch: 'Connaught Place, New Delhi', status: 'active'
         });
+        const fdAccountId = fdResult.lastInsertRowid;
+        audit('CREATE', 'account', fdAccountId, { type: 'fixed_deposit', balance: 200000 });
 
-        // Seed transactions
+        // Seed transactions using executeTransfer so balances update and from/to accounts are linked
         const txns = [
             { type: 'credit', amount: 85000, description: 'Salary Credit — Deloitte Consulting' },
+            { type: 'credit', amount: 12000, description: 'Dividend — Infosys Ltd' },
+            { type: 'credit', amount: 5000, description: 'Cashback — Credit Card' },
+            { type: 'credit', amount: 15000, description: 'Freelance — Web Design Project' },
             { type: 'debit', amount: 15000, description: 'SIP — Axis Bluechip Fund' },
             { type: 'debit', amount: 18500, description: 'CRED — Rent Payment' },
             { type: 'debit', amount: 3200, description: 'Swiggy — Dinner' },
             { type: 'debit', amount: 280000, description: 'Apple India — MacBook Pro M3' },
             { type: 'debit', amount: 12500, description: 'Amazon — Groceries' },
-            { type: 'credit', amount: 12000, description: 'Dividend — Infosys Ltd' },
             { type: 'debit', amount: 2500, description: 'Uber — Airport Drop' },
             { type: 'upi', amount: 500, description: 'UPI to Mrigesh Mohanty' },
             { type: 'debit', amount: 999, description: 'Netflix Subscription' },
             { type: 'debit', amount: 1499, description: 'Amazon Prime Renewal' },
             { type: 'debit', amount: 4200, description: 'Airtel — Broadband Bill' },
-            { type: 'credit', amount: 5000, description: 'Cashback — Credit Card' },
             { type: 'debit', amount: 8500, description: 'Zomato — Team Lunch' },
             { type: 'debit', amount: 1800, description: 'BookMyShow — Movie Tickets' },
             { type: 'transfer', amount: 25000, description: 'Transfer to Fixed Deposit' },
-            { type: 'credit', amount: 15000, description: 'Freelance — Web Design Project' },
             { type: 'debit', amount: 649, description: 'Spotify Premium Renewal' },
             { type: 'debit', amount: 4500, description: 'Petrol — Indian Oil' },
             { type: 'upi', amount: 1200, description: 'UPI to Vegetable Vendor' },
         ];
-        txns.forEach(t => bankingDb.createTransaction({ userId, type: t.type, amount: t.amount, description: t.description, status: 'completed' }));
+
+        txns.forEach(t => {
+            try {
+                const isCredit = t.type === 'credit';
+                const isTransferToFd = t.type === 'transfer';
+                const result = bankingDb.executeTransfer({
+                    userId,
+                    fromAccountId: isCredit ? null : accountId,
+                    toAccountId: isTransferToFd ? fdAccountId : (isCredit ? accountId : null),
+                    amount: t.amount,
+                    type: t.type,
+                    description: t.description
+                });
+                audit(isCredit ? 'CREATE' : (isTransferToFd ? 'TRANSFER' : 'DEBIT'), 'transaction', result.transactionId, { type: t.type, amount: t.amount, description: t.description });
+            } catch (txnErr) {
+                // If transfer fails (e.g. insufficient balance), fall back to a simple transaction record
+                const fallback = bankingDb.createTransaction({
+                    userId, type: t.type, amount: t.amount, description: t.description + ' (record only)',
+                    status: 'completed', fromAccount: t.type === 'credit' ? null : accountId, toAccount: t.type === 'credit' ? accountId : null
+                });
+                audit('CREATE', 'transaction', fallback.lastInsertRowid, { type: t.type, amount: t.amount, note: 'fallback record' });
+            }
+        });
 
         // Seed goals
-        bankingDb.createGoal({ userId, name: 'Emergency Fund', targetAmount: 300000, currentAmount: 125000, deadline: '2026-12-31', goalType: 'emergency' });
-        bankingDb.createGoal({ userId, name: 'New Car — Tesla Model 3', targetAmount: 4500000, currentAmount: 850000, deadline: '2028-06-30', goalType: 'vehicle' });
-        bankingDb.createGoal({ userId, name: 'Europe Vacation', targetAmount: 800000, currentAmount: 220000, deadline: '2027-03-31', goalType: 'travel' });
-        bankingDb.createGoal({ userId, name: 'Child Education Fund', targetAmount: 2000000, currentAmount: 300000, deadline: '2030-06-01', goalType: 'education' });
+        const goals = [
+            { name: 'Emergency Fund', targetAmount: 300000, currentAmount: 125000, deadline: '2026-12-31', goalType: 'emergency' },
+            { name: 'New Car — Tesla Model 3', targetAmount: 4500000, currentAmount: 850000, deadline: '2028-06-30', goalType: 'vehicle' },
+            { name: 'Europe Vacation', targetAmount: 800000, currentAmount: 220000, deadline: '2027-03-31', goalType: 'travel' },
+            { name: 'Child Education Fund', targetAmount: 2000000, currentAmount: 300000, deadline: '2030-06-01', goalType: 'education' }
+        ];
+        goals.forEach(g => {
+            const r = bankingDb.createGoal({ userId, ...g });
+            audit('CREATE', 'goal', r.lastInsertRowid, g);
+        });
 
         // Seed bills
-        bankingDb.createBill({ userId, name: 'House Rent', category: 'Housing', amount: 18500, dueDate: '2026-06-05', isRecurring: true, frequency: 'monthly' });
-        bankingDb.createBill({ userId, name: 'Electricity & Utilities', category: 'Utilities', amount: 3200, dueDate: '2026-06-15', isRecurring: true, frequency: 'monthly' });
-        bankingDb.createBill({ userId, name: 'WiFi & Phone', category: 'Utilities', amount: 1200, dueDate: '2026-06-20', isRecurring: true, frequency: 'monthly' });
-        bankingDb.createBill({ userId, name: 'Monthly SIPs', category: 'Investment', amount: 25000, dueDate: '2026-06-05', isRecurring: true, frequency: 'monthly' });
+        const bills = [
+            { name: 'House Rent', category: 'Housing', amount: 18500, dueDate: '2026-06-05', isRecurring: true, frequency: 'monthly' },
+            { name: 'Electricity & Utilities', category: 'Utilities', amount: 3200, dueDate: '2026-06-15', isRecurring: true, frequency: 'monthly' },
+            { name: 'WiFi & Phone', category: 'Utilities', amount: 1200, dueDate: '2026-06-20', isRecurring: true, frequency: 'monthly' },
+            { name: 'Monthly SIPs', category: 'Investment', amount: 25000, dueDate: '2026-06-05', isRecurring: true, frequency: 'monthly' }
+        ];
+        bills.forEach(b => {
+            const r = bankingDb.createBill({ userId, ...b });
+            audit('CREATE', 'bill', r.lastInsertRowid, b);
+        });
 
         // Seed subscriptions
-        bankingDb.createSubscription({ userId, name: 'Netflix', amount: 649, billingCycle: 'monthly', nextBilling: '2026-07-01' });
-        bankingDb.createSubscription({ userId, name: 'Amazon Prime', amount: 1499, billingCycle: 'yearly', nextBilling: '2027-05-01' });
-        bankingDb.createSubscription({ userId, name: 'Spotify Premium', amount: 119, billingCycle: 'monthly', nextBilling: '2026-07-05' });
-        bankingDb.createSubscription({ userId, name: 'Google One', amount: 195, billingCycle: 'monthly', nextBilling: '2026-07-10' });
-        bankingDb.createSubscription({ userId, name: 'YouTube Premium', amount: 129, billingCycle: 'monthly', nextBilling: '2026-07-15' });
+        const subscriptions = [
+            { name: 'Netflix', amount: 649, billingCycle: 'monthly', nextBilling: '2026-07-01' },
+            { name: 'Amazon Prime', amount: 1499, billingCycle: 'yearly', nextBilling: '2027-05-01' },
+            { name: 'Spotify Premium', amount: 119, billingCycle: 'monthly', nextBilling: '2026-07-05' },
+            { name: 'Google One', amount: 195, billingCycle: 'monthly', nextBilling: '2026-07-10' },
+            { name: 'YouTube Premium', amount: 129, billingCycle: 'monthly', nextBilling: '2026-07-15' }
+        ];
+        subscriptions.forEach(s => {
+            const r = bankingDb.createSubscription({ userId, ...s });
+            audit('CREATE', 'subscription', r.lastInsertRowid, s);
+        });
 
         // Seed cards
-        bankingDb.createCard({ userId, cardNumberMasked: '**** **** **** 4821', expiry: '05/29', cvvMasked: '***', cardType: 'debit', limitDaily: 100000, limitMonthly: 1000000 });
-        bankingDb.createCard({ userId, cardNumberMasked: '**** **** **** 7734', expiry: '08/28', cvvMasked: '***', cardType: 'credit', limitDaily: 200000, limitMonthly: 2000000 });
+        const cards = [
+            { cardNumberMasked: '**** **** **** 4821', expiry: '05/29', cvvMasked: '***', cardType: 'debit', limitDaily: 100000, limitMonthly: 1000000 },
+            { cardNumberMasked: '**** **** **** 7734', expiry: '08/28', cvvMasked: '***', cardType: 'credit', limitDaily: 200000, limitMonthly: 2000000 }
+        ];
+        cards.forEach(c => {
+            const r = bankingDb.createCard({ userId, ...c });
+            audit('CREATE', 'card', r.lastInsertRowid, { cardType: c.cardType });
+        });
 
         // Seed assets
-        bankingDb.createAsset({ userId, name: 'SBI Privilege Savings', assetType: 'bank', value: 525000, liquidity: 'high', returns: 3.5 });
-        bankingDb.createAsset({ userId, name: 'Axis Bluechip Direct', assetType: 'mutual_fund', value: 820000, liquidity: 'medium', returns: 16.2 });
-        bankingDb.createAsset({ userId, name: 'Nifty 50 Index Fund', assetType: 'stock', value: 650000, liquidity: 'high', returns: 13.8 });
-        bankingDb.createAsset({ userId, name: 'Physical Gold & SGBs', assetType: 'gold', value: 420000, liquidity: 'medium', returns: 8.5 });
-        bankingDb.createAsset({ userId, name: 'Gurgaon Penthouse', assetType: 'property', value: 18500000, liquidity: 'low', returns: 12.0 });
-        bankingDb.createAsset({ userId, name: 'Crypto Portfolio', assetType: 'crypto', value: 180000, liquidity: 'high', returns: -5.2 });
+        const assets = [
+            { name: 'SBI Privilege Savings', assetType: 'bank', value: 525000, liquidity: 'high', returns: 3.5 },
+            { name: 'Axis Bluechip Direct', assetType: 'mutual_fund', value: 820000, liquidity: 'medium', returns: 16.2 },
+            { name: 'Nifty 50 Index Fund', assetType: 'stock', value: 650000, liquidity: 'high', returns: 13.8 },
+            { name: 'Physical Gold & SGBs', assetType: 'gold', value: 420000, liquidity: 'medium', returns: 8.5 },
+            { name: 'Gurgaon Penthouse', assetType: 'property', value: 18500000, liquidity: 'low', returns: 12.0 },
+            { name: 'Crypto Portfolio', assetType: 'crypto', value: 180000, liquidity: 'high', returns: -5.2 }
+        ];
+        assets.forEach(a => {
+            const r = bankingDb.createAsset({ userId, ...a });
+            audit('CREATE', 'asset', r.lastInsertRowid, { name: a.name, value: a.value });
+        });
 
         // Seed beneficiaries
-        bankingDb.createBeneficiary({ userId, name: 'Priya Sharma', accountNumber: '123456789012', ifsc: 'SBIN0001234', bankName: 'State Bank of India', upiId: 'priya@upi', verified: true });
-        bankingDb.createBeneficiary({ userId, name: 'Aarav Sharma', accountNumber: '987654321098', ifsc: 'HDFC0005678', bankName: 'HDFC Bank', upiId: 'aarav@upi', verified: true });
-        bankingDb.createBeneficiary({ userId, name: 'Ramesh Kumar', accountNumber: null, ifsc: null, bankName: null, upiId: 'ramesh@paytm', verified: false });
+        const beneficiaries = [
+            { name: 'Priya Sharma', accountNumber: '123456789012', ifsc: 'SBIN0001234', bankName: 'State Bank of India', upiId: 'priya@upi', verified: true },
+            { name: 'Aarav Sharma', accountNumber: '987654321098', ifsc: 'HDFC0005678', bankName: 'HDFC Bank', upiId: 'aarav@upi', verified: true },
+            { name: 'Ramesh Kumar', accountNumber: null, ifsc: null, bankName: null, upiId: 'ramesh@paytm', verified: false }
+        ];
+        beneficiaries.forEach(b => {
+            const r = bankingDb.createBeneficiary({ userId, ...b });
+            audit('CREATE', 'beneficiary', r.lastInsertRowid, { name: b.name });
+        });
 
         // Seed loans
-        bankingDb.createLoan({ userId, loanType: 'personal', principalAmount: 500000, interestRate: 11.5, tenureMonths: 36, emiAmount: 16472, totalPayable: 592992, nextDueDate: '2026-07-05', purpose: 'Home Renovation' });
-        bankingDb.createLoan({ userId, loanType: 'car', principalAmount: 800000, interestRate: 9.0, tenureMonths: 60, emiAmount: 16607, totalPayable: 996420, nextDueDate: '2026-07-10', purpose: 'Tesla Model 3' });
+        const loans = [
+            { loanType: 'personal', principalAmount: 500000, interestRate: 11.5, tenureMonths: 36, emiAmount: 16472, totalPayable: 592992, nextDueDate: '2026-07-05', purpose: 'Home Renovation' },
+            { loanType: 'car', principalAmount: 800000, interestRate: 9.0, tenureMonths: 60, emiAmount: 16607, totalPayable: 996420, nextDueDate: '2026-07-10', purpose: 'Tesla Model 3' }
+        ];
+        loans.forEach(l => {
+            const r = bankingDb.createLoan({ userId, ...l });
+            audit('CREATE', 'loan', r.lastInsertRowid, { loanType: l.loanType, principalAmount: l.principalAmount });
+        });
 
         // Seed recurring payments (SIPs / auto-debits)
-        bankingDb.createRecurring({ userId, name: 'Axis Bluechip SIP', amount: 15000, frequency: 'monthly', category: 'Investment', nextExecution: '2026-07-05' });
-        bankingDb.createRecurring({ userId, name: 'Nifty Index SIP', amount: 10000, frequency: 'monthly', category: 'Investment', nextExecution: '2026-07-05' });
-        bankingDb.createRecurring({ userId, name: 'PPF Contribution', amount: 12500, frequency: 'monthly', category: 'Savings', nextExecution: '2026-07-01' });
+        const recurring = [
+            { name: 'Axis Bluechip SIP', amount: 15000, frequency: 'monthly', category: 'Investment', nextExecution: '2026-07-05' },
+            { name: 'Nifty Index SIP', amount: 10000, frequency: 'monthly', category: 'Investment', nextExecution: '2026-07-05' },
+            { name: 'PPF Contribution', amount: 12500, frequency: 'monthly', category: 'Savings', nextExecution: '2026-07-01' }
+        ];
+        recurring.forEach(rp => {
+            const r = bankingDb.createRecurring({ userId, ...rp });
+            audit('CREATE', 'recurring', r.lastInsertRowid, { name: rp.name, amount: rp.amount });
+        });
 
         // Update KYC
         bankingDb.createOrUpdateKyc({ userId, panNumber: 'ABCDE1234F', aadhaarMasked: '**** **** 5678', kycStatus: 'verified', verifiedAt: new Date().toISOString() });
+        audit('UPDATE', 'kyc', null, { kycStatus: 'verified' });
+
+        // Login audit entry
+        audit('LOGIN', 'user', null, { email: user.email, seededAt: new Date().toISOString() });
 
         res.json({ success: true, message: 'Judge demo data seeded successfully' });
     } catch (err) {
