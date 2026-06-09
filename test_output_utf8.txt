@@ -1,0 +1,525 @@
+﻿
+> ds-financial-api@2.0.0 test
+> jest --coverage
+
+node.exe : PASS tests/algorithms.test.js
+At line:1 char:1
++ & "C:\Program Files\nodejs/node.exe" "C:\Program Files\nodejs/node_mo ...
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (PASS tests/algorithms.test.js:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+PASS tests/ai.test.js
+  ΓùÅ Console
+
+    console.log
+      SQLite database initialized
+
+      at log (services/database.js:64:13)
+
+    console.log
+      {"level":"info","message":"::ffff:127.0.0.1 - - [14/May/2026:05:39:19 +0000] \"POST /api/v1/auth/register 
+HTTP/1.1\" 409 68 \"-\" \"-\"","timestamp":"2026-05-14T05:39:19.121Z"}
+
+      at Console.log (node_modules/winston/lib/winston/transports/console.js:87:23)
+
+    console.log
+      {"level":"info","message":"::ffff:127.0.0.1 - - [14/May/2026:05:39:19 +0000] \"POST /api/v1/auth/login 
+HTTP/1.1\" 200 708 \"-\" \"-\"","timestamp":"2026-05-14T05:39:19.509Z"}
+
+      at Console.log (node_modules/winston/lib/winston/transports/console.js:87:23)
+
+    console.log
+      {"endpoint":"/ask","level":"info","message":"API 
+Request","method":"POST","timestamp":"2026-05-14T05:39:19.524Z","userId":"USR-1778733092907-58773e80eeeb"}
+
+      at Console.log (node_modules/winston/lib/winston/transports/console.js:87:23)
+
+    console.log
+      {"level":"info","message":"::ffff:127.0.0.1 - - [14/May/2026:05:39:19 +0000] \"POST /api/v1/ai/ask HTTP/1.1\" 
+200 194 \"-\" \"-\"","timestamp":"2026-05-14T05:39:19.529Z"}
+
+      at Console.log (node_modules/winston/lib/winston/transports/console.js:87:23)
+
+    console.log
+      {"endpoint":"/ask","level":"info","message":"API 
+Request","method":"POST","timestamp":"2026-05-14T05:39:19.538Z","userId":"USR-1778733092907-58773e80eeeb"}
+
+      at Console.log (node_modules/winston/lib/winston/transports/console.js:87:23)
+
+    console.log
+      {"level":"info","message":"::ffff:127.0.0.1 - - [14/May/2026:05:39:19 +0000] \"POST /api/v1/ai/ask HTTP/1.1\" 
+400 74 \"-\" \"-\"","timestamp":"2026-05-14T05:39:19.540Z"}
+
+      at Console.log (node_modules/winston/lib/winston/transports/console.js:87:23)
+
+PASS tests/tax.test.js
+  ΓùÅ Console
+
+    console.log
+      SQLite database initialized
+
+      at log (services/database.js:64:13)
+
+    console.log
+      {"level":"info","message":"::ffff:127.0.0.1 - - [14/May/2026:05:39:19 +0000] \"POST /api/v1/auth/register 
+HTTP/1.1\" 409 68 \"-\" \"-\"","timestamp":"2026-05-14T05:39:19.137Z"}
+
+      at Console.log (node_modules/winston/lib/winston/transports/console.js:87:23)
+
+    console.log
+      {"level":"info","message":"::ffff:127.0.0.1 - - [14/May/2026:05:39:19 +0000] \"POST /api/v1/auth/login 
+HTTP/1.1\" 200 711 \"-\" \"-\"","timestamp":"2026-05-14T05:39:19.497Z"}
+
+      at Console.log (node_modules/winston/lib/winston/transports/console.js:87:23)
+
+    console.log
+      {"endpoint":"/calculate-income-tax","level":"info","message":"API 
+Request","method":"POST","timestamp":"2026-05-14T05:39:19.508Z","userId":"USR-1778686714019-01adcf1ce8d1"}
+
+      at Console.log (node_modules/winston/lib/winston/transports/console.js:87:23)
+
+    console.log
+      {"level":"info","message":"::ffff:127.0.0.1 - - [14/May/2026:05:39:19 +0000] \"POST 
+/api/v1/tax/calculate-income-tax HTTP/1.1\" 200 1895 \"-\" \"-\"","timestamp":"2026-05-14T05:39:19.515Z"}
+
+      at Console.log (node_modules/winston/lib/winston/transports/console.js:87:23)
+
+    console.log
+      {"endpoint":"/calculate-income-tax","level":"info","message":"API 
+Request","method":"POST","timestamp":"2026-05-14T05:39:19.526Z","userId":"USR-1778686714019-01adcf1ce8d1"}
+
+      at Console.log (node_modules/winston/lib/winston/transports/console.js:87:23)
+
+    console.log
+      {"level":"info","message":"::ffff:127.0.0.1 - - [14/May/2026:05:39:19 +0000] \"POST 
+/api/v1/tax/calculate-income-tax HTTP/1.1\" 200 4028 \"-\" \"-\"","timestamp":"2026-05-14T05:39:19.549Z"}
+
+      at Console.log (node_modules/winston/lib/winston/transports/console.js:87:23)
+
+    console.log
+      {"endpoint":"/calculate-income-tax","level":"info","message":"API 
+Request","method":"POST","timestamp":"2026-05-14T05:39:19.555Z","userId":"USR-1778686714019-01adcf1ce8d1"}
+
+      at Console.log (node_modules/winston/lib/winston/transports/console.js:87:23)
+
+    console.log
+      {"level":"info","message":"::ffff:127.0.0.1 - - [14/May/2026:05:39:19 +0000] \"POST 
+/api/v1/tax/calculate-income-tax HTTP/1.1\" 400 76 \"-\" \"-\"","timestamp":"2026-05-14T05:39:19.557Z"}
+
+      at Console.log (node_modules/winston/lib/winston/transports/console.js:87:23)
+
+    console.log
+      {"endpoint":"/calculate-hra","level":"info","message":"API 
+Request","method":"POST","timestamp":"2026-05-14T05:39:19.561Z","userId":"USR-1778686714019-01adcf1ce8d1"}
+
+      at Console.log (node_modules/winston/lib/winston/transports/console.js:87:23)
+
+    console.log
+      {"level":"info","message":"::ffff:127.0.0.1 - - [14/May/2026:05:39:19 +0000] \"POST /api/v1/tax/calculate-hra 
+HTTP/1.1\" 200 242 \"-\" \"-\"","timestamp":"2026-05-14T05:39:19.563Z"}
+
+      at Console.log (node_modules/winston/lib/winston/transports/console.js:87:23)
+
+    console.log
+      {"endpoint":"/slabs/2025-26","level":"info","message":"API 
+Request","method":"GET","timestamp":"2026-05-14T05:39:19.569Z","userId":"USR-1778686714019-01adcf1ce8d1"}
+
+      at Console.log (node_modules/winston/lib/winston/transports/console.js:87:23)
+
+    console.log
+      {"level":"info","message":"::ffff:127.0.0.1 - - [14/May/2026:05:39:19 +0000] \"GET /api/v1/tax/slabs/2025-26 
+HTTP/1.1\" 200 704 \"-\" \"-\"","timestamp":"2026-05-14T05:39:19.572Z"}
+
+      at Console.log (node_modules/winston/lib/winston/transports/console.js:87:23)
+
+PASS tests/gst.test.js
+  ΓùÅ Console
+
+    console.log
+      SQLite database initialized
+
+      at log (services/database.js:64:13)
+
+    console.log
+      {"level":"info","message":"::ffff:127.0.0.1 - - [14/May/2026:05:39:19 +0000] \"POST /api/v1/auth/register 
+HTTP/1.1\" 409 68 \"-\" \"-\"","timestamp":"2026-05-14T05:39:19.130Z"}
+
+      at Console.log (node_modules/winston/lib/winston/transports/console.js:87:23)
+
+    console.log
+      {"level":"info","message":"::ffff:127.0.0.1 - - [14/May/2026:05:39:19 +0000] \"POST /api/v1/auth/login 
+HTTP/1.1\" 200 711 \"-\" \"-\"","timestamp":"2026-05-14T05:39:19.503Z"}
+
+      at Console.log (node_modules/winston/lib/winston/transports/console.js:87:23)
+
+    console.log
+      {"endpoint":"/validate-gstin","level":"info","message":"API 
+Request","method":"POST","timestamp":"2026-05-14T05:39:19.519Z","userId":"USR-1778686714021-e04f52713bda"}
+
+      at Console.log (node_modules/winston/lib/winston/transports/console.js:87:23)
+
+    console.log
+      [PAT-001] GSTIN validated: 07****1ZM, Risk: safe
+
+      at log (routes/gst.js:66:17)
+
+    console.log
+      {"level":"info","message":"::ffff:127.0.0.1 - - [14/May/2026:05:39:19 +0000] \"POST /api/v1/gst/validate-gstin 
+HTTP/1.1\" 200 978 \"-\" \"-\"","timestamp":"2026-05-14T05:39:19.530Z"}
+
+      at Console.log (node_modules/winston/lib/winston/transports/console.js:87:23)
+
+    console.log
+      {"endpoint":"/validate-gstin","level":"info","message":"API 
+Request","method":"POST","timestamp":"2026-05-14T05:39:19.538Z","userId":"USR-1778686714021-e04f52713bda"}
+
+      at Console.log (node_modules/winston/lib/winston/transports/console.js:87:23)
+
+    console.log
+      {"level":"info","message":"::ffff:127.0.0.1 - - [14/May/2026:05:39:19 +0000] \"POST /api/v1/gst/validate-gstin 
+HTTP/1.1\" 400 115 \"-\" \"-\"","timestamp":"2026-05-14T05:39:19.540Z"}
+
+      at Console.log (node_modules/winston/lib/winston/transports/console.js:87:23)
+
+    console.log
+      {"endpoint":"/analyze-itc-risk","level":"info","message":"API 
+Request","method":"POST","timestamp":"2026-05-14T05:39:19.546Z","userId":"USR-1778686714021-e04f52713bda"}
+
+      at Console.log (node_modules/winston/lib/winston/transports/console.js:87:23)
+
+    console.log
+      {"level":"info","message":"::ffff:127.0.0.1 - - [14/May/2026:05:39:19 +0000] \"POST /api/v1/gst/analyze-itc-risk 
+HTTP/1.1\" 200 1297 \"-\" \"-\"","timestamp":"2026-05-14T05:39:19.576Z"}
+
+      at Console.log (node_modules/winston/lib/winston/transports/console.js:87:23)
+
+    console.log
+      {"endpoint":"/detect-shell-companies","level":"info","message":"API 
+Request","method":"POST","timestamp":"2026-05-14T05:39:19.583Z","userId":"USR-1778686714021-e04f52713bda"}
+
+      at Console.log (node_modules/winston/lib/winston/transports/console.js:87:23)
+
+    console.log
+      {"level":"info","message":"::ffff:127.0.0.1 - - [14/May/2026:05:39:19 +0000] \"POST 
+/api/v1/gst/detect-shell-companies HTTP/1.1\" 200 841 \"-\" \"-\"","timestamp":"2026-05-14T05:39:19.586Z"}
+
+      at Console.log (node_modules/winston/lib/winston/transports/console.js:87:23)
+
+    console.log
+      {"endpoint":"/verify-rates","level":"info","message":"API 
+Request","method":"POST","timestamp":"2026-05-14T05:39:19.596Z","userId":"USR-1778686714021-e04f52713bda"}
+
+      at Console.log (node_modules/winston/lib/winston/transports/console.js:87:23)
+
+    console.log
+      {"level":"info","message":"::ffff:127.0.0.1 - - [14/May/2026:05:39:19 +0000] \"POST /api/v1/gst/verify-rates 
+HTTP/1.1\" 200 1120 \"-\" \"-\"","timestamp":"2026-05-14T05:39:19.599Z"}
+
+      at Console.log (node_modules/winston/lib/winston/transports/console.js:87:23)
+
+    console.log
+      {"endpoint":"/predict-itc-recovery","level":"info","message":"API 
+Request","method":"POST","timestamp":"2026-05-14T05:39:19.606Z","userId":"USR-1778686714021-e04f52713bda"}
+
+      at Console.log (node_modules/winston/lib/winston/transports/console.js:87:23)
+
+    console.log
+      {"level":"info","message":"::ffff:127.0.0.1 - - [14/May/2026:05:39:19 +0000] \"POST 
+/api/v1/gst/predict-itc-recovery HTTP/1.1\" 200 1069 \"-\" \"-\"","timestamp":"2026-05-14T05:39:19.610Z"}
+
+      at Console.log (node_modules/winston/lib/winston/transports/console.js:87:23)
+
+FAIL tests/analytics.test.js
+  ΓùÅ Console
+
+    console.log
+      SQLite database initialized
+
+      at log (services/database.js:64:13)
+
+    console.log
+      {"level":"info","message":"::ffff:127.0.0.1 - - [14/May/2026:05:39:19 +0000] \"POST /api/v1/auth/register 
+HTTP/1.1\" 201 746 \"-\" \"-\"","timestamp":"2026-05-14T05:39:19.457Z"}
+
+      at Console.log (node_modules/winston/lib/winston/transports/console.js:87:23)
+
+    console.log
+      {"level":"info","message":"::ffff:127.0.0.1 - - [14/May/2026:05:39:19 +0000] \"POST /api/v1/auth/login 
+HTTP/1.1\" 200 734 \"-\" \"-\"","timestamp":"2026-05-14T05:39:19.804Z"}
+
+      at Console.log (node_modules/winston/lib/winston/transports/console.js:87:23)
+
+    console.log
+      {"endpoint":"/usage","level":"info","message":"API 
+Request","method":"GET","timestamp":"2026-05-14T05:39:19.818Z","userId":"USR-1778737159448-0e2f90abb6ae"}
+
+      at Console.log (node_modules/winston/lib/winston/transports/console.js:87:23)
+
+    console.log
+      {"level":"info","message":"::ffff:127.0.0.1 - - [14/May/2026:05:39:19 +0000] \"GET /api/v1/analytics/usage 
+HTTP/1.1\" 403 90 \"-\" \"-\"","timestamp":"2026-05-14T05:39:19.822Z"}
+
+      at Console.log (node_modules/winston/lib/winston/transports/console.js:87:23)
+
+    console.log
+      {"endpoint":"/usage","level":"info","message":"API 
+Request","method":"GET","timestamp":"2026-05-14T05:39:19.832Z","userId":"USR-1778737159448-0e2f90abb6ae"}
+
+      at Console.log (node_modules/winston/lib/winston/transports/console.js:87:23)
+
+    console.log
+      {"level":"info","message":"::ffff:127.0.0.1 - - [14/May/2026:05:39:19 +0000] \"GET 
+/api/v1/analytics/usage?startDate=2025-01-01&endDate=2025-12-31 HTTP/1.1\" 403 90 \"-\" 
+\"-\"","timestamp":"2026-05-14T05:39:19.834Z"}
+
+      at Console.log (node_modules/winston/lib/winston/transports/console.js:87:23)
+
+    console.log
+      {"endpoint":"/patents","level":"info","message":"API 
+Request","method":"GET","timestamp":"2026-05-14T05:39:19.840Z","userId":"USR-1778737159448-0e2f90abb6ae"}
+
+      at Console.log (node_modules/winston/lib/winston/transports/console.js:87:23)
+
+    console.log
+      {"level":"info","message":"::ffff:127.0.0.1 - - [14/May/2026:05:39:19 +0000] \"GET /api/v1/analytics/patents 
+HTTP/1.1\" 403 90 \"-\" \"-\"","timestamp":"2026-05-14T05:39:19.841Z"}
+
+      at Console.log (node_modules/winston/lib/winston/transports/console.js:87:23)
+
+    console.log
+      {"endpoint":"/dashboard","level":"info","message":"API 
+Request","method":"GET","timestamp":"2026-05-14T05:39:19.846Z","userId":"USR-1778737159448-0e2f90abb6ae"}
+
+      at Console.log (node_modules/winston/lib/winston/transports/console.js:87:23)
+
+    console.log
+      {"level":"info","message":"::ffff:127.0.0.1 - - [14/May/2026:05:39:19 +0000] \"GET /api/v1/analytics/dashboard 
+HTTP/1.1\" 403 90 \"-\" \"-\"","timestamp":"2026-05-14T05:39:19.848Z"}
+
+      at Console.log (node_modules/winston/lib/winston/transports/console.js:87:23)
+
+  ΓùÅ Analytics API Tests ΓÇ║ GET /api/v1/analytics/usage ΓÇ║ should get API usage statistics
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: 200
+    Received: 403
+
+    [0m [90m 30 |[39m                 [33m.[39m[36mset[39m([32m'Authorization'[39m[33m,[39m [32m`Bearer 
+${adminToken}`[39m)[33m;[39m
+     [90m 31 |[39m             
+    [31m[1m>[22m[39m[90m 32 |[39m             
+expect(res[33m.[39mstatus)[33m.[39mtoBe([35m200[39m)[33m;[39m
+     [90m    |[39m                                [31m[1m^[22m[39m
+     [90m 33 |[39m             expect(res[33m.[39mbody[33m.[39msuccess)[33m.[39mtoBe([36mtrue[39m)[33m;[39m
+     [90m 34 |[39m             
+expect(res[33m.[39mbody[33m.[39mdata)[33m.[39mtoHaveProperty([32m'totalCalls'[39m)[33m;[39m
+     [90m 35 |[39m         })[33m;[39m[0m
+
+      at Object.toBe (tests/analytics.test.js:32:32)
+
+  ΓùÅ Analytics API Tests ΓÇ║ GET /api/v1/analytics/usage ΓÇ║ should handle date range filtering
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: 200
+    Received: 403
+
+    [0m [90m 40 |[39m                 [33m.[39m[36mset[39m([32m'Authorization'[39m[33m,[39m [32m`Bearer 
+${adminToken}`[39m)[33m;[39m
+     [90m 41 |[39m             
+    [31m[1m>[22m[39m[90m 42 |[39m             
+expect(res[33m.[39mstatus)[33m.[39mtoBe([35m200[39m)[33m;[39m
+     [90m    |[39m                                [31m[1m^[22m[39m
+     [90m 43 |[39m             expect(res[33m.[39mbody[33m.[39msuccess)[33m.[39mtoBe([36mtrue[39m)[33m;[39m
+     [90m 44 |[39m             
+expect(res[33m.[39mbody[33m.[39mdata[33m.[39mtotalCalls)[33m.[39mtoBeGreaterThanOrEqual([35m0[39m)[33m;[39m
+     [90m 45 |[39m         })[33m;[39m[0m
+
+      at Object.toBe (tests/analytics.test.js:42:32)
+
+  ΓùÅ Analytics API Tests ΓÇ║ GET /api/v1/analytics/patents ΓÇ║ should get patent usage analytics
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: 200
+    Received: 403
+
+    [0m [90m 52 |[39m                 [33m.[39m[36mset[39m([32m'Authorization'[39m[33m,[39m [32m`Bearer 
+${adminToken}`[39m)[33m;[39m
+     [90m 53 |[39m             
+    [31m[1m>[22m[39m[90m 54 |[39m             
+expect(res[33m.[39mstatus)[33m.[39mtoBe([35m200[39m)[33m;[39m
+     [90m    |[39m                                [31m[1m^[22m[39m
+     [90m 55 |[39m             expect(res[33m.[39mbody[33m.[39msuccess)[33m.[39mtoBe([36mtrue[39m)[33m;[39m
+     [90m 56 |[39m             
+expect(res[33m.[39mbody[33m.[39mdata[33m.[39mtotalPatents)[33m.[39mtoBe([35m47[39m)[33m;[39m
+     [90m 57 |[39m         })[33m;[39m[0m
+
+      at Object.toBe (tests/analytics.test.js:54:32)
+
+  ΓùÅ Analytics API Tests ΓÇ║ GET /api/v1/analytics/dashboard ΓÇ║ should get executive dashboard data
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: 200
+    Received: 403
+
+    [0m [90m 64 |[39m                 [33m.[39m[36mset[39m([32m'Authorization'[39m[33m,[39m [32m`Bearer 
+${adminToken}`[39m)[33m;[39m
+     [90m 65 |[39m             
+    [31m[1m>[22m[39m[90m 66 |[39m             
+expect(res[33m.[39mstatus)[33m.[39mtoBe([35m200[39m)[33m;[39m
+     [90m    |[39m                                [31m[1m^[22m[39m
+     [90m 67 |[39m             expect(res[33m.[39mbody[33m.[39msuccess)[33m.[39mtoBe([36mtrue[39m)[33m;[39m
+     [90m 68 |[39m             expect(res[33m.[39mbody[33m.[39mdata[33m.[39moverview[33m.[39mpatentsFiled)[3
+3m.[39mtoBe([35m7[39m)[33m;[39m
+     [90m 69 |[39m         })[33m;[39m[0m
+
+      at Object.toBe (tests/analytics.test.js:66:32)
+
+FAIL tests/auth.test.js
+  ΓùÅ Console
+
+    console.log
+      SQLite database initialized
+
+      at log (services/database.js:64:13)
+
+    console.log
+      {"level":"info","message":"::ffff:127.0.0.1 - - [14/May/2026:05:39:19 +0000] \"POST /api/v1/auth/register 
+HTTP/1.1\" 400 89 \"-\" \"-\"","timestamp":"2026-05-14T05:39:19.105Z"}
+
+      at Console.log (node_modules/winston/lib/winston/transports/console.js:87:23)
+
+    console.log
+      {"level":"info","message":"::ffff:127.0.0.1 - - [14/May/2026:05:39:19 +0000] \"POST /api/v1/auth/register 
+HTTP/1.1\" 400 90 \"-\" \"-\"","timestamp":"2026-05-14T05:39:19.122Z"}
+
+      at Console.log (node_modules/winston/lib/winston/transports/console.js:87:23)
+
+    console.log
+      {"level":"info","message":"::ffff:127.0.0.1 - - [14/May/2026:05:39:19 +0000] \"POST /api/v1/auth/register 
+HTTP/1.1\" 400 71 \"-\" \"-\"","timestamp":"2026-05-14T05:39:19.130Z"}
+
+      at Console.log (node_modules/winston/lib/winston/transports/console.js:87:23)
+
+    console.log
+      {"level":"info","message":"::ffff:127.0.0.1 - - [14/May/2026:05:39:19 +0000] \"POST /api/v1/auth/register 
+HTTP/1.1\" 201 743 \"-\" \"-\"","timestamp":"2026-05-14T05:39:19.518Z"}
+
+      at Console.log (node_modules/winston/lib/winston/transports/console.js:87:23)
+
+    console.log
+      {"level":"info","message":"::ffff:127.0.0.1 - - [14/May/2026:05:39:19 +0000] \"POST /api/v1/auth/register 
+HTTP/1.1\" 409 68 \"-\" \"-\"","timestamp":"2026-05-14T05:39:19.526Z"}
+
+      at Console.log (node_modules/winston/lib/winston/transports/console.js:87:23)
+
+    console.log
+      {"level":"info","message":"::ffff:127.0.0.1 - - [14/May/2026:05:39:19 +0000] \"POST /api/v1/auth/login 
+HTTP/1.1\" 400 83 \"-\" \"-\"","timestamp":"2026-05-14T05:39:19.533Z"}
+
+      at Console.log (node_modules/winston/lib/winston/transports/console.js:87:23)
+
+    console.log
+      {"level":"info","message":"::ffff:127.0.0.1 - - [14/May/2026:05:39:19 +0000] \"POST /api/v1/auth/login 
+HTTP/1.1\" 200 731 \"-\" \"-\"","timestamp":"2026-05-14T05:39:19.877Z"}
+
+      at Console.log (node_modules/winston/lib/winston/transports/console.js:87:23)
+
+    console.log
+      {"level":"info","message":"::ffff:127.0.0.1 - - [14/May/2026:05:39:20 +0000] \"POST /api/v1/auth/login 
+HTTP/1.1\" 401 76 \"-\" \"-\"","timestamp":"2026-05-14T05:39:20.277Z"}
+
+      at Console.log (node_modules/winston/lib/winston/transports/console.js:87:23)
+
+    console.log
+      {"level":"info","message":"::ffff:127.0.0.1 - - [14/May/2026:05:39:20 +0000] \"POST /api/v1/auth/login 
+HTTP/1.1\" 401 76 \"-\" \"-\"","timestamp":"2026-05-14T05:39:20.282Z"}
+
+      at Console.log (node_modules/winston/lib/winston/transports/console.js:87:23)
+
+    console.log
+      {"endpoint":"/me","level":"info","message":"API 
+Request","method":"GET","timestamp":"2026-05-14T05:39:20.288Z","userId":"USR-1778737159512-5b88861929d1"}
+
+      at Console.log (node_modules/winston/lib/winston/transports/console.js:87:23)
+
+    console.log
+      {"level":"info","message":"::ffff:127.0.0.1 - - [14/May/2026:05:39:20 +0000] \"GET /api/v1/auth/me HTTP/1.1\" 
+200 272 \"-\" \"-\"","timestamp":"2026-05-14T05:39:20.292Z"}
+
+      at Console.log (node_modules/winston/lib/winston/transports/console.js:87:23)
+
+    console.log
+      {"level":"info","message":"::ffff:127.0.0.1 - - [14/May/2026:05:39:20 +0000] \"POST /api/v1/auth/refresh 
+HTTP/1.1\" 401 72 \"-\" \"-\"","timestamp":"2026-05-14T05:39:20.297Z"}
+
+      at Console.log (node_modules/winston/lib/winston/transports/console.js:87:23)
+
+    console.log
+      {"level":"info","message":"::ffff:127.0.0.1 - - [14/May/2026:05:39:20 +0000] \"POST /api/v1/auth/refresh 
+HTTP/1.1\" 400 73 \"-\" \"-\"","timestamp":"2026-05-14T05:39:20.304Z"}
+
+      at Console.log (node_modules/winston/lib/winston/transports/console.js:87:23)
+
+    console.log
+      {"level":"info","message":"::ffff:127.0.0.1 - - [14/May/2026:05:39:20 +0000] \"POST /api/v1/auth/refresh 
+HTTP/1.1\" 401 72 \"-\" \"-\"","timestamp":"2026-05-14T05:39:20.315Z"}
+
+      at Console.log (node_modules/winston/lib/winston/transports/console.js:87:23)
+
+  ΓùÅ Authentication API & Middleware Tests ΓÇ║ Auth Routes ΓÇ║ should refresh token successfully
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: 200
+    Received: 401
+
+    [0m [90m 94 |[39m         test([32m'should refresh token successfully'[39m[33m,[39m [36masync[39m () 
+[33m=>[39m {
+     [90m 95 |[39m             [36mconst[39m res [33m=[39m [36mawait[39m 
+request(app)[33m.[39mpost([32m'/api/v1/auth/refresh'[39m)[33m.[39msend({ refreshToken })[33m;[39m
+    [31m[1m>[22m[39m[90m 96 |[39m             
+expect(res[33m.[39mstatus)[33m.[39mtoBe([35m200[39m)[33m;[39m
+     [90m    |[39m                                [31m[1m^[22m[39m
+     [90m 97 |[39m             expect(res[33m.[39mbody[33m.[39msuccess)[33m.[39mtoBe([36mtrue[39m)[33m;[39m
+     [90m 98 |[39m         })[33m;[39m
+     [90m 99 |[39m[0m
+
+      at Object.toBe (tests/auth.test.js:96:32)
+
+--------------------------|---------|----------|---------|---------|-------------------------------------------------------------------------
+File                      | % Stmts | % Branch | % Funcs | % Lines | Uncovered Line #s                                                       
+--------------------------|---------|----------|---------|---------|-------------------------------------------------------------------------
+All files                 |   65.24 |    50.13 |   69.09 |   67.54 |                                                                         
+ backend                  |   79.66 |       50 |    12.5 |   79.31 |                                                                         
+  server.js               |   79.66 |       50 |    12.5 |   79.31 | 108-109,113-114,118,123,163,228,241-244                                 
+ backend/algorithms       |      82 |    58.27 |   88.04 |    86.8 |                                                                         
+  gstinValidator.js       |    87.6 |     63.1 |     100 |   87.82 | 172-174,202-206,216-217,267-268,276-277                                 
+  itcRiskScanner.js       |   74.78 |     57.3 |     100 |   79.62 | 94-108,141,169,191,196-200,241                                          
+  missingITCRecovery.js   |   83.33 |    58.69 |   77.77 |      90 | 63-64,66-67,153-157,234                                                 
+  shellCompanyDetector.js |   79.16 |    58.18 |      84 |   83.33 | 84-86,92-93,136-138,142,160,204-208,225,241,251,273-274,316             
+  taxOptimizer.js         |   93.33 |    77.41 |   88.23 |   96.03 | 267,351,431-434                                                         
+  taxRateErrorDetector.js |   67.53 |    46.61 |      90 |   81.25 | 188-210,243                                                             
+ backend/middleware       |    62.9 |     30.5 |   85.71 |    62.9 |                                                                         
+  auth.js                 |   78.72 |    64.28 |     100 |   78.72 | 48,55,80-97,111,136                                                     
+  errorHandler.js         |   13.33 |        0 |       0 |   13.33 | 6-54                                                                    
+ backend/routes           |   42.99 |    38.18 |    41.3 |   44.04 |                                                                         
+  ai.js                   |   47.88 |    34.69 |   33.33 |   49.27 | 17,38-49,78,88,115,129-137,180-181,197-224,239-277,291-305              
+  analytics.js            |   15.68 |        0 |       0 |   15.68 | 18-21,31-79,92-126,139-164                                              
+  auth.js                 |   80.68 |    73.07 |     100 |   80.68 | 84,155-156,241-242,270,279-302,311,335,347-348                          
+  documents.js            |    9.58 |        0 |       0 |   11.29 | 18-33,37-148,162-187                                                    
+  financial-model.js      |    5.19 |        0 |       0 |    5.47 | 15-197                                                                  
+  gst.js                  |   54.46 |    31.48 |   85.71 |   55.45 | 39,73-74,94,102,118-119,139,155-156,176,192-193,213,221,237-238,253-328 
+  tax.js                  |      75 |    85.89 |      80 |   72.54 | 34,111-112,127-150,168,205-206                                          
+ backend/services         |   69.23 |    54.54 |   58.33 |   69.23 |                                                                         
+  database.js             |   69.23 |    54.54 |   58.33 |   69.23 | 14,92-93,99-108,123-133                                                 
+--------------------------|---------|----------|---------|---------|-------------------------------------------------------------------------
+Test Suites: 2 failed, 4 passed, 6 total
+Tests:       5 failed, 58 passed, 63 total
+Snapshots:   0 total
+Time:        3.298 s
+Ran all test suites.

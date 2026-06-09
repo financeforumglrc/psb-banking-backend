@@ -1,0 +1,302 @@
+﻿
+> ds-financial-api@2.0.0 test
+> jest --coverage
+
+node.exe : FAIL tests/ai.test.js
+At line:1 char:1
++ & "C:\Program Files\nodejs/node.exe" "C:\Program Files\nodejs/node_mo ...
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (FAIL tests/ai.test.js:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+  ΓùÅ Console
+
+    console.log
+      SQLite database initialized
+
+      at log (services/database.js:64:13)
+
+    console.log
+      {"level":"info","message":"::ffff:127.0.0.1 - - [14/May/2026:04:37:46 +0000] \"POST /api/v1/auth/register 
+HTTP/1.1\" 409 68 \"-\" \"-\"","timestamp":"2026-05-14T04:37:46.398Z"}
+
+      at Console.log (node_modules/winston/lib/winston/transports/console.js:87:23)
+
+    console.log
+      {"level":"info","message":"::ffff:127.0.0.1 - - [14/May/2026:04:37:46 +0000] \"POST /api/v1/auth/login 
+HTTP/1.1\" 200 708 \"-\" \"-\"","timestamp":"2026-05-14T04:37:46.690Z"}
+
+      at Console.log (node_modules/winston/lib/winston/transports/console.js:87:23)
+
+    console.log
+      {"endpoint":"/ask","level":"info","message":"API 
+Request","method":"POST","timestamp":"2026-05-14T04:37:46.699Z","userId":"USR-1778733092907-58773e80eeeb"}
+
+      at Console.log (node_modules/winston/lib/winston/transports/console.js:87:23)
+
+    console.log
+      {"level":"info","message":"::ffff:127.0.0.1 - - [14/May/2026:04:37:46 +0000] \"POST /api/v1/ai/ask HTTP/1.1\" 
+200 194 \"-\" \"-\"","timestamp":"2026-05-14T04:37:46.703Z"}
+
+      at Console.log (node_modules/winston/lib/winston/transports/console.js:87:23)
+
+    console.log
+      {"endpoint":"/ask","level":"info","message":"API 
+Request","method":"POST","timestamp":"2026-05-14T04:37:46.711Z","userId":"USR-1778733092907-58773e80eeeb"}
+
+      at Console.log (node_modules/winston/lib/winston/transports/console.js:87:23)
+
+    console.log
+      {"level":"info","message":"::ffff:127.0.0.1 - - [14/May/2026:04:37:46 +0000] \"POST /api/v1/ai/ask HTTP/1.1\" 
+400 74 \"-\" \"-\"","timestamp":"2026-05-14T04:37:46.712Z"}
+
+      at Console.log (node_modules/winston/lib/winston/transports/console.js:87:23)
+
+  ΓùÅ AI API Tests ΓÇ║ PAT-007: Multi-Provider AI Orchestrator ΓÇ║ should process AI tax query
+
+    expect(received).toBeDefined()
+
+    Received: undefined
+
+    [0m [90m 55 |[39m             expect(res[33m.[39mstatus)[33m.[39mtoBe([35m200[39m)[33m;[39m
+     [90m 56 |[39m             expect(res[33m.[39mbody[33m.[39msuccess)[33m.[39mtoBe([36mtrue[39m)[33m;[39m
+    [31m[1m>[22m[39m[90m 57 |[39m             
+expect(res[33m.[39mbody[33m.[39mdata[33m.[39mresponse)[33m.[39mtoBeDefined()[33m;[39m
+     [90m    |[39m                                            [31m[1m^[22m[39m
+     [90m 58 |[39m             [90m// Verify our patent feature[39m
+     [90m 59 |[39m             
+expect(res[33m.[39mbody[33m.[39mdata[33m.[39mprovider)[33m.[39mtoBeDefined()[33m;[39m
+     [90m 60 |[39m             
+expect(res[33m.[39mbody[33m.[39mdata[33m.[39mconfidence)[33m.[39mtoBeDefined()[33m;[39m[0m
+
+      at Object.toBeDefined (tests/ai.test.js:57:44)
+
+  ΓùÅ AI API Tests ΓÇ║ PAT-007: Multi-Provider AI Orchestrator ΓÇ║ should handle validation errors
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: "QUERY_MISSING"
+    Received: "QUESTION_MISSING"
+
+    [0m [90m 69 |[39m             expect(res[33m.[39mstatus)[33m.[39mtoBe([35m400[39m)[33m;[39m
+     [90m 70 |[39m             
+expect(res[33m.[39mbody[33m.[39msuccess)[33m.[39mtoBe([36mfalse[39m)[33m;[39m
+    [31m[1m>[22m[39m[90m 71 |[39m             
+expect(res[33m.[39mbody[33m.[39mcode)[33m.[39mtoBe([32m'QUERY_MISSING'[39m)[33m;[39m
+     [90m    |[39m                                   [31m[1m^[22m[39m
+     [90m 72 |[39m         })[33m;[39m
+     [90m 73 |[39m     })[33m;[39m
+     [90m 74 |[39m })[33m;[39m[0m
+
+      at Object.toBe (tests/ai.test.js:71:35)
+
+PASS tests/tax.test.js
+  ΓùÅ Console
+
+    console.log
+      SQLite database initialized
+
+      at log (services/database.js:64:13)
+
+    console.log
+      {"level":"info","message":"::ffff:127.0.0.1 - - [14/May/2026:04:37:46 +0000] \"POST /api/v1/auth/register 
+HTTP/1.1\" 409 68 \"-\" \"-\"","timestamp":"2026-05-14T04:37:46.383Z"}
+
+      at Console.log (node_modules/winston/lib/winston/transports/console.js:87:23)
+
+    console.log
+      {"level":"info","message":"::ffff:127.0.0.1 - - [14/May/2026:04:37:46 +0000] \"POST /api/v1/auth/login 
+HTTP/1.1\" 200 711 \"-\" \"-\"","timestamp":"2026-05-14T04:37:46.688Z"}
+
+      at Console.log (node_modules/winston/lib/winston/transports/console.js:87:23)
+
+    console.log
+      {"endpoint":"/calculate-income-tax","level":"info","message":"API 
+Request","method":"POST","timestamp":"2026-05-14T04:37:46.699Z","userId":"USR-1778686714019-01adcf1ce8d1"}
+
+      at Console.log (node_modules/winston/lib/winston/transports/console.js:87:23)
+
+    console.log
+      {"level":"info","message":"::ffff:127.0.0.1 - - [14/May/2026:04:37:46 +0000] \"POST 
+/api/v1/tax/calculate-income-tax HTTP/1.1\" 200 1895 \"-\" \"-\"","timestamp":"2026-05-14T04:37:46.704Z"}
+
+      at Console.log (node_modules/winston/lib/winston/transports/console.js:87:23)
+
+    console.log
+      {"endpoint":"/calculate-income-tax","level":"info","message":"API 
+Request","method":"POST","timestamp":"2026-05-14T04:37:46.711Z","userId":"USR-1778686714019-01adcf1ce8d1"}
+
+      at Console.log (node_modules/winston/lib/winston/transports/console.js:87:23)
+
+    console.log
+      {"level":"info","message":"::ffff:127.0.0.1 - - [14/May/2026:04:37:46 +0000] \"POST 
+/api/v1/tax/calculate-income-tax HTTP/1.1\" 200 4028 \"-\" \"-\"","timestamp":"2026-05-14T04:37:46.736Z"}
+
+      at Console.log (node_modules/winston/lib/winston/transports/console.js:87:23)
+
+    console.log
+      {"endpoint":"/calculate-income-tax","level":"info","message":"API 
+Request","method":"POST","timestamp":"2026-05-14T04:37:46.743Z","userId":"USR-1778686714019-01adcf1ce8d1"}
+
+      at Console.log (node_modules/winston/lib/winston/transports/console.js:87:23)
+
+    console.log
+      {"level":"info","message":"::ffff:127.0.0.1 - - [14/May/2026:04:37:46 +0000] \"POST 
+/api/v1/tax/calculate-income-tax HTTP/1.1\" 400 76 \"-\" \"-\"","timestamp":"2026-05-14T04:37:46.744Z"}
+
+      at Console.log (node_modules/winston/lib/winston/transports/console.js:87:23)
+
+    console.log
+      {"endpoint":"/calculate-hra","level":"info","message":"API 
+Request","method":"POST","timestamp":"2026-05-14T04:37:46.751Z","userId":"USR-1778686714019-01adcf1ce8d1"}
+
+      at Console.log (node_modules/winston/lib/winston/transports/console.js:87:23)
+
+    console.log
+      {"level":"info","message":"::ffff:127.0.0.1 - - [14/May/2026:04:37:46 +0000] \"POST /api/v1/tax/calculate-hra 
+HTTP/1.1\" 200 242 \"-\" \"-\"","timestamp":"2026-05-14T04:37:46.753Z"}
+
+      at Console.log (node_modules/winston/lib/winston/transports/console.js:87:23)
+
+    console.log
+      {"endpoint":"/slabs/2025-26","level":"info","message":"API 
+Request","method":"GET","timestamp":"2026-05-14T04:37:46.760Z","userId":"USR-1778686714019-01adcf1ce8d1"}
+
+      at Console.log (node_modules/winston/lib/winston/transports/console.js:87:23)
+
+    console.log
+      {"level":"info","message":"::ffff:127.0.0.1 - - [14/May/2026:04:37:46 +0000] \"GET /api/v1/tax/slabs/2025-26 
+HTTP/1.1\" 200 704 \"-\" \"-\"","timestamp":"2026-05-14T04:37:46.762Z"}
+
+      at Console.log (node_modules/winston/lib/winston/transports/console.js:87:23)
+
+PASS tests/gst.test.js
+  ΓùÅ Console
+
+    console.log
+      SQLite database initialized
+
+      at log (services/database.js:64:13)
+
+    console.log
+      {"level":"info","message":"::ffff:127.0.0.1 - - [14/May/2026:04:37:46 +0000] \"POST /api/v1/auth/register 
+HTTP/1.1\" 409 68 \"-\" \"-\"","timestamp":"2026-05-14T04:37:46.387Z"}
+
+      at Console.log (node_modules/winston/lib/winston/transports/console.js:87:23)
+
+    console.log
+      {"level":"info","message":"::ffff:127.0.0.1 - - [14/May/2026:04:37:46 +0000] \"POST /api/v1/auth/login 
+HTTP/1.1\" 200 711 \"-\" \"-\"","timestamp":"2026-05-14T04:37:46.686Z"}
+
+      at Console.log (node_modules/winston/lib/winston/transports/console.js:87:23)
+
+    console.log
+      {"endpoint":"/validate-gstin","level":"info","message":"API 
+Request","method":"POST","timestamp":"2026-05-14T04:37:46.697Z","userId":"USR-1778686714021-e04f52713bda"}
+
+      at Console.log (node_modules/winston/lib/winston/transports/console.js:87:23)
+
+    console.log
+      [PAT-001] GSTIN validated: 07****1ZM, Risk: safe
+
+      at log (routes/gst.js:66:17)
+
+    console.log
+      {"level":"info","message":"::ffff:127.0.0.1 - - [14/May/2026:04:37:46 +0000] \"POST /api/v1/gst/validate-gstin 
+HTTP/1.1\" 200 978 \"-\" \"-\"","timestamp":"2026-05-14T04:37:46.705Z"}
+
+      at Console.log (node_modules/winston/lib/winston/transports/console.js:87:23)
+
+    console.log
+      {"endpoint":"/validate-gstin","level":"info","message":"API 
+Request","method":"POST","timestamp":"2026-05-14T04:37:46.712Z","userId":"USR-1778686714021-e04f52713bda"}
+
+      at Console.log (node_modules/winston/lib/winston/transports/console.js:87:23)
+
+    console.log
+      {"level":"info","message":"::ffff:127.0.0.1 - - [14/May/2026:04:37:46 +0000] \"POST /api/v1/gst/validate-gstin 
+HTTP/1.1\" 400 115 \"-\" \"-\"","timestamp":"2026-05-14T04:37:46.714Z"}
+
+      at Console.log (node_modules/winston/lib/winston/transports/console.js:87:23)
+
+    console.log
+      {"endpoint":"/analyze-itc-risk","level":"info","message":"API 
+Request","method":"POST","timestamp":"2026-05-14T04:37:46.722Z","userId":"USR-1778686714021-e04f52713bda"}
+
+      at Console.log (node_modules/winston/lib/winston/transports/console.js:87:23)
+
+    console.log
+      {"level":"info","message":"::ffff:127.0.0.1 - - [14/May/2026:04:37:46 +0000] \"POST /api/v1/gst/analyze-itc-risk 
+HTTP/1.1\" 200 1297 \"-\" \"-\"","timestamp":"2026-05-14T04:37:46.743Z"}
+
+      at Console.log (node_modules/winston/lib/winston/transports/console.js:87:23)
+
+    console.log
+      {"endpoint":"/detect-shell-companies","level":"info","message":"API 
+Request","method":"POST","timestamp":"2026-05-14T04:37:46.750Z","userId":"USR-1778686714021-e04f52713bda"}
+
+      at Console.log (node_modules/winston/lib/winston/transports/console.js:87:23)
+
+    console.log
+      {"level":"info","message":"::ffff:127.0.0.1 - - [14/May/2026:04:37:46 +0000] \"POST 
+/api/v1/gst/detect-shell-companies HTTP/1.1\" 200 841 \"-\" \"-\"","timestamp":"2026-05-14T04:37:46.753Z"}
+
+      at Console.log (node_modules/winston/lib/winston/transports/console.js:87:23)
+
+    console.log
+      {"endpoint":"/verify-rates","level":"info","message":"API 
+Request","method":"POST","timestamp":"2026-05-14T04:37:46.761Z","userId":"USR-1778686714021-e04f52713bda"}
+
+      at Console.log (node_modules/winston/lib/winston/transports/console.js:87:23)
+
+    console.log
+      {"level":"info","message":"::ffff:127.0.0.1 - - [14/May/2026:04:37:46 +0000] \"POST /api/v1/gst/verify-rates 
+HTTP/1.1\" 200 1120 \"-\" \"-\"","timestamp":"2026-05-14T04:37:46.765Z"}
+
+      at Console.log (node_modules/winston/lib/winston/transports/console.js:87:23)
+
+    console.log
+      {"endpoint":"/predict-itc-recovery","level":"info","message":"API 
+Request","method":"POST","timestamp":"2026-05-14T04:37:46.771Z","userId":"USR-1778686714021-e04f52713bda"}
+
+      at Console.log (node_modules/winston/lib/winston/transports/console.js:87:23)
+
+    console.log
+      {"level":"info","message":"::ffff:127.0.0.1 - - [14/May/2026:04:37:46 +0000] \"POST 
+/api/v1/gst/predict-itc-recovery HTTP/1.1\" 200 1069 \"-\" \"-\"","timestamp":"2026-05-14T04:37:46.773Z"}
+
+      at Console.log (node_modules/winston/lib/winston/transports/console.js:87:23)
+
+--------------------------|---------|----------|---------|---------|--------------------------------------------------------------------------------------------------------------------------------------------
+File                      | % Stmts | % Branch | % Funcs | % Lines | Uncovered Line #s                                                                                                                          
+--------------------------|---------|----------|---------|---------|--------------------------------------------------------------------------------------------------------------------------------------------
+All files                 |   41.19 |    21.19 |   31.11 |   43.16 |                                                                                                                                            
+ backend                  |   79.66 |       50 |    12.5 |   79.31 |                                                                                                                                            
+  server.js               |   79.66 |       50 |    12.5 |   79.31 | 108-109,113-114,118,123,163,228,241-244                                                                                                    
+ backend/algorithms       |    40.3 |    17.45 |   30.26 |   43.18 |                                                                                                                                            
+  gstinValidator.js       |   16.32 |     3.49 |    2.98 |   16.83 | 10-12,144-149,157-159,172-174,184-186,202-206,216-217,227-229,239-240,243-244,253-254,266-277,285-383,443-783,887-1137,1162-1410,1458-1755 
+  itcRiskScanner.js       |   42.85 |    25.73 |   53.33 |   44.44 | 10-12,88-113,141,146-172,191,196-200,209-212,230,241,261-400                                                                               
+  missingITCRecovery.js   |   61.53 |    29.34 |   33.33 |   68.57 | 10-12,63-64,66-67,81-82,110,115-117,153-157,184-300                                                                                        
+  shellCompanyDetector.js |   65.83 |    36.36 |      60 |   70.37 | 10-12,84-86,91-96,136-138,142,160,169-177,204-208,225,241,251,272-365                                                                      
+  taxOptimizer.js         |   74.81 |       50 |   52.94 |   79.36 | 28-58,98,267,351,397,425-428,431-434,452-475                                                                                               
+  taxRateErrorDetector.js |   51.94 |     21.8 |      60 |    62.5 | 149-150,179-213,220,243,267-353                                                                                                            
+ backend/middleware       |    38.7 |    13.55 |   28.57 |    38.7 |                                                                                                                                            
+  auth.js                 |    46.8 |    28.57 |   33.33 |    46.8 | 25,35,48,55,80-97,110-126,134-151,161-177                                                                                                  
+  errorHandler.js         |   13.33 |        0 |       0 |   13.33 | 6-54                                                                                                                                       
+ backend/routes           |   37.31 |    32.69 |   34.78 |   38.09 |                                                                                                                                            
+  ai.js                   |   47.88 |    34.69 |   33.33 |   49.27 | 17,38-49,78,88,115,129-137,180-181,197-224,239-277,291-305                                                                                 
+  analytics.js            |   15.68 |        0 |       0 |   15.68 | 18-21,31-79,92-126,139-164                                                                                                                 
+  auth.js                 |   46.59 |    34.61 |      40 |   46.59 | 30,56,65,73,84,100-156,174,183,192,241-242,256-318,332-348                                                                                 
+  documents.js            |    9.58 |        0 |       0 |   11.29 | 18-33,37-148,162-187                                                                                                                       
+  financial-model.js      |    5.19 |        0 |       0 |    5.47 | 15-197                                                                                                                                     
+  gst.js                  |   54.46 |    31.48 |   85.71 |   55.45 | 39,73-74,94,102,118-119,139,155-156,176,192-193,213,221,237-238,253-328                                                                    
+  tax.js                  |      75 |    85.89 |      80 |   72.54 | 34,111-112,127-150,168,205-206                                                                                                             
+ backend/services         |   61.53 |    18.18 |   41.66 |   61.53 |                                                                                                                                            
+  database.js             |   61.53 |    18.18 |   41.66 |   61.53 | 14,69-73,92-93,99-108,122-133                                                                                                              
+--------------------------|---------|----------|---------|---------|--------------------------------------------------------------------------------------------------------------------------------------------
+
+Test Suites: 1 failed, 2 passed, 3 total
+Tests:       2 failed, 11 passed, 13 total
+Snapshots:   0 total
+Time:        3.723 s
+Ran all test suites.

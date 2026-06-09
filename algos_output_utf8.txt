@@ -1,0 +1,1017 @@
+﻿
+> ds-financial-api@2.0.0 test
+> jest --coverage
+
+node.exe : FAIL tests/algorithms.test.js
+At line:1 char:1
++ & "C:\Program Files\nodejs/node.exe" "C:\Program Files\nodejs/node_mo ...
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (FAIL tests/algorithms.test.js:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+  ΓùÅ Patent Algorithms Unit Tests ΓÇ║ PAT-001: GSTIN Validator ΓÇ║ should identify suspicious patterns
+
+    expect(received).toEqual(expected) // deep equality
+
+    Expected: ArrayContaining [ObjectContaining {"message": StringContaining "000"}]
+    Received: [{"message": "GSTIN format is invalid. Must be 15 alphanumeric characters.", "type": "error"}]
+
+    [0m [90m 33 |[39m         test([32m'should identify suspicious patterns'[39m[33m,[39m () [33m=>[39m {
+     [90m 34 |[39m             [36mconst[39m result1 [33m=[39m 
+[33mGSTINValidator[39m[33m.[39mvalidateComprehensive([32m'07AABCU9603R000'[39m)[33m;[39m
+    [31m[1m>[22m[39m[90m 35 |[39m             expect(result1[33m.[39malerts)[33m.[39mtoEqual(
+     [90m    |[39m                                    [31m[1m^[22m[39m
+     [90m 36 |[39m                 expect[33m.[39marrayContaining([
+     [90m 37 |[39m                     expect[33m.[39mobjectContaining({ message[33m:[39m 
+expect[33m.[39mstringContaining([32m'000'[39m) })
+     [90m 38 |[39m                 ])[0m
+
+      at Object.toEqual (tests/algorithms.test.js:35:36)
+
+  ΓùÅ Patent Algorithms Unit Tests ΓÇ║ PAT-002: ITC Risk Scanner ΓÇ║ should generate HTML summary
+
+    expect(received).toContain(expected) // indexOf
+
+    Expected substring: "ITC Risk Analysis"
+    Received string:    "
+                <div class=\"bm-itc-scanner-results animate__animated animate__fadeIn\">
+                    <!-- Summary Cards -->
+                    <div class=\"bm-stats-grid\" style=\"grid-template-columns: repeat(4, 1fr); margin-bottom: 
+1.5rem;\">
+                        <div class=\"bm-stat-card\">
+                            <div class=\"bm-stat-icon\"><i class=\"fas fa-file-invoice\"></i></div>
+                            <div class=\"bm-stat-value\">3</div>
+                            <div class=\"bm-stat-label\">Total Invoices</div>
+                        </div>
+                        <div class=\"bm-stat-card safe\">
+                            <div class=\"bm-stat-icon\"><i class=\"fas fa-check-circle\"></i></div>
+                            <div class=\"bm-stat-value\">Γé╣180</div>
+                            <div class=\"bm-stat-label\">Eligible ITC</div>
+                        </div>
+                        <div class=\"bm-stat-card danger\">
+                            <div class=\"bm-stat-icon\"><i class=\"fas fa-exclamation-triangle\"></i></div>
+                            <div class=\"bm-stat-value\">Γé╣900</div>
+                            <div class=\"bm-stat-label\">At-Risk ITC</div>
+                        </div>
+                        <div class=\"bm-stat-card info\">
+                            <div class=\"bm-stat-icon\"><i class=\"fas fa-coins\"></i></div>
+                            <div class=\"bm-stat-value\">Γé╣522</div>
+                            <div class=\"bm-stat-label\">Recovery Potential</div>
+                        </div>
+                    </div>┬╖
+                    <!-- Risk Distribution Chart -->
+                    <div class=\"bm-card\" style=\"margin-bottom: 1.5rem;\">
+                        <div class=\"bm-card-header\">
+                            <div class=\"bm-card-title\"><i class=\"fas fa-chart-pie\"></i> ITC Risk Distribution</div>
+                        </div>
+                        <div style=\"display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 
+1rem;\">┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖
+                                    <div class=\"bm-risk-category-card\" style=\"background: #FF444410; border: 1px 
+solid #FF444440; border-radius: 12px; padding: 1rem; cursor: pointer;\" onclick=\"showCategoryDetails('NOT_IN_2B')\">
+                                        <div style=\"display: flex; align-items: center; gap: 0.75rem; margin-bottom: 
+0.75rem;\">
+                                            <div style=\"width: 36px; height: 36px; border-radius: 8px; background: 
+#FF444420; display: flex; align-items: center; justify-content: center;\">
+                                                <i class=\"fas fa-times-circle\" style=\"color: #FF4444;\"></i>
+                                            </div>
+                                            <span style=\"font-size: 0.85rem; font-weight: 500;\">Not in GSTR-2B</span>
+                                        </div>
+                                        <div style=\"font-size: 1.25rem; font-weight: 700; color: 
+#FF4444;\">Γé╣360</div>
+                                        <div style=\"font-size: 0.75rem; color: var(--bm-text-secondary);\">1 
+invoices</div>
+                                    </div>┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖
+                                    <div class=\"bm-risk-category-card\" style=\"background: #FF8C0010; border: 1px 
+solid #FF8C0040; border-radius: 12px; padding: 1rem; cursor: pointer;\" 
+onclick=\"showCategoryDetails('VALUE_MISMATCH')\">
+                                        <div style=\"display: flex; align-items: center; gap: 0.75rem; margin-bottom: 
+0.75rem;\">
+                                            <div style=\"width: 36px; height: 36px; border-radius: 8px; background: 
+#FF8C0020; display: flex; align-items: center; justify-content: center;\">
+                                                <i class=\"fas fa-not-equal\" style=\"color: #FF8C00;\"></i>
+                                            </div>
+                                            <span style=\"font-size: 0.85rem; font-weight: 500;\">Value Mismatch</span>
+                                        </div>
+                                        <div style=\"font-size: 1.25rem; font-weight: 700; color: 
+#FF8C00;\">Γé╣540</div>
+                                        <div style=\"font-size: 0.75rem; color: var(--bm-text-secondary);\">1 
+invoices</div>
+                                    </div>┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖
+                                    <div class=\"bm-risk-category-card\" style=\"background: #FFD70010; border: 1px 
+solid #FFD70040; border-radius: 12px; padding: 1rem; cursor: pointer;\" 
+onclick=\"showCategoryDetails('GSTIN_INACTIVE')\">
+                                        <div style=\"display: flex; align-items: center; gap: 0.75rem; margin-bottom: 
+0.75rem;\">
+                                            <div style=\"width: 36px; height: 36px; border-radius: 8px; background: 
+#FFD70020; display: flex; align-items: center; justify-content: center;\">
+                                                <i class=\"fas fa-user-slash\" style=\"color: #FFD700;\"></i>
+                                            </div>
+                                            <span style=\"font-size: 0.85rem; font-weight: 500;\">Inactive 
+Supplier</span>
+                                        </div>
+                                        <div style=\"font-size: 1.25rem; font-weight: 700; color: #FFD700;\">Γé╣0</div>
+                                        <div style=\"font-size: 0.75rem; color: var(--bm-text-secondary);\">0 
+invoices</div>
+                                    </div>┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖
+                                    <div class=\"bm-risk-category-card\" style=\"background: #BA55D310; border: 1px 
+solid #BA55D340; border-radius: 12px; padding: 1rem; cursor: pointer;\" onclick=\"showCategoryDetails('LATE_FILING')\">
+                                        <div style=\"display: flex; align-items: center; gap: 0.75rem; margin-bottom: 
+0.75rem;\">
+                                            <div style=\"width: 36px; height: 36px; border-radius: 8px; background: 
+#BA55D320; display: flex; align-items: center; justify-content: center;\">
+                                                <i class=\"fas fa-clock\" style=\"color: #BA55D3;\"></i>
+                                            </div>
+                                            <span style=\"font-size: 0.85rem; font-weight: 500;\">Late Filing</span>
+                                        </div>
+                                        <div style=\"font-size: 1.25rem; font-weight: 700; color: #BA55D3;\">Γé╣0</div>
+                                        <div style=\"font-size: 0.75rem; color: var(--bm-text-secondary);\">0 
+invoices</div>
+                                    </div>┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖
+                                    <div class=\"bm-risk-category-card\" style=\"background: #00BFFF10; border: 1px 
+solid #00BFFF40; border-radius: 12px; padding: 1rem; cursor: pointer;\" 
+onclick=\"showCategoryDetails('RATE_MISMATCH')\">
+                                        <div style=\"display: flex; align-items: center; gap: 0.75rem; margin-bottom: 
+0.75rem;\">
+                                            <div style=\"width: 36px; height: 36px; border-radius: 8px; background: 
+#00BFFF20; display: flex; align-items: center; justify-content: center;\">
+                                                <i class=\"fas fa-percent\" style=\"color: #00BFFF;\"></i>
+                                            </div>
+                                            <span style=\"font-size: 0.85rem; font-weight: 500;\">Rate Mismatch</span>
+                                        </div>
+                                        <div style=\"font-size: 1.25rem; font-weight: 700; color: #00BFFF;\">Γé╣0</div>
+                                        <div style=\"font-size: 0.75rem; color: var(--bm-text-secondary);\">0 
+invoices</div>
+                                    </div>┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖
+                                    <div class=\"bm-risk-category-card\" style=\"background: #00FF8810; border: 1px 
+solid #00FF8840; border-radius: 12px; padding: 1rem; cursor: pointer;\" onclick=\"showCategoryDetails('SAFE')\">
+                                        <div style=\"display: flex; align-items: center; gap: 0.75rem; margin-bottom: 
+0.75rem;\">
+                                            <div style=\"width: 36px; height: 36px; border-radius: 8px; background: 
+#00FF8820; display: flex; align-items: center; justify-content: center;\">
+                                                <i class=\"fas fa-check-circle\" style=\"color: #00FF88;\"></i>
+                                            </div>
+                                            <span style=\"font-size: 0.85rem; font-weight: 500;\">Eligible ITC</span>
+                                        </div>
+                                        <div style=\"font-size: 1.25rem; font-weight: 700; color: 
+#00FF88;\">Γé╣180</div>
+                                        <div style=\"font-size: 0.75rem; color: var(--bm-text-secondary);\">1 
+invoices</div>
+                                    </div>┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖
+                        </div>
+                    </div>┬╖
+                    <!-- Recommendations -->┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖
+                        <div class=\"bm-card\" style=\"margin-bottom: 1.5rem;\">
+                            <div class=\"bm-card-header\">
+                                <div class=\"bm-card-title\"><i class=\"fas fa-lightbulb\"></i> AI 
+Recommendations</div>
+                            </div>
+                            <div style=\"display: flex; flex-direction: column; gap: 
+1rem;\">┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖
+                                    <div class=\"bm-recommendation-card\" style=\"display: flex; gap: 1rem; padding: 
+1rem; background: var(--bm-bg-secondary); border-radius: 12px; border-left: 4px solid var(--bm-warning);\">
+                                        <div style=\"flex-shrink: 0; width: 48px; height: 48px; border-radius: 12px; 
+background: rgba(255,215,0,0.15); display: flex; align-items: center; justify-content: center;\">
+                                            <i class=\"fas fa-exclamation-triangle\" style=\"color: var(--bm-warning); 
+font-size: 1.25rem;\"></i>
+                                        </div>
+                                        <div style=\"flex: 1;\">
+                                            <div style=\"display: flex; align-items: center; gap: 0.5rem; 
+margin-bottom: 0.25rem;\">
+                                                <h4 style=\"margin: 0; font-size: 0.95rem;\">Contact Suppliers for 
+Missing Invoices</h4>
+                                                <span class=\"bm-priority-badge\" style=\"font-size: 0.65rem; padding: 
+0.15rem 0.5rem; border-radius: 4px; background: var(--bm-warning); color: var(--bm-bg-primary);\">HIGH</span>
+                                            </div>
+                                            <p style=\"margin: 0 0 0.5rem; font-size: 0.85rem; color: 
+var(--bm-text-secondary);\">1 invoices worth Γé╣360 are not reflecting in GSTR-2B. Contact suppliers immediately for 
+GSTR-1 amendment.</p>
+                                            <div style=\"display: flex; align-items: center; justify-content: 
+space-between;\">
+                                                <span style=\"font-size: 0.75rem; color: var(--bm-danger);\">Γé╣360 at 
+risk</span>
+                                                <button class=\"bm-btn bm-btn-ghost\" style=\"padding: 0.35rem 
+0.75rem; font-size: 0.75rem;\">Generate Follow-up Emails</button>
+                                            </div>
+                                        </div>
+                                    </div>┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖
+                                    <div class=\"bm-recommendation-card\" style=\"display: flex; gap: 1rem; padding: 
+1rem; background: var(--bm-bg-secondary); border-radius: 12px; border-left: 4px solid var(--bm-neon-cyan);\">
+                                        <div style=\"flex-shrink: 0; width: 48px; height: 48px; border-radius: 12px; 
+background: rgba(0,191,255,0.15); display: flex; align-items: center; justify-content: center;\">
+                                            <i class=\"fas fa-balance-scale\" style=\"color: var(--bm-neon-cyan); 
+font-size: 1.25rem;\"></i>
+                                        </div>
+                                        <div style=\"flex: 1;\">
+                                            <div style=\"display: flex; align-items: center; gap: 0.5rem; 
+margin-bottom: 0.25rem;\">
+                                                <h4 style=\"margin: 0; font-size: 0.95rem;\">Reconcile Value 
+Mismatches</h4>
+                                                <span class=\"bm-priority-badge\" style=\"font-size: 0.65rem; padding: 
+0.15rem 0.5rem; border-radius: 4px; background: var(--bm-neon-cyan); color: var(--bm-bg-primary);\">MEDIUM</span>
+                                            </div>
+                                            <p style=\"margin: 0 0 0.5rem; font-size: 0.85rem; color: 
+var(--bm-text-secondary);\">1 invoices have value differences between your books and GSTR-2B. Verify invoice details 
+and request corrections.</p>
+                                            <div style=\"display: flex; align-items: center; justify-content: 
+space-between;\">
+                                                <span style=\"font-size: 0.75rem; color: var(--bm-danger);\">Γé╣540 to 
+verify</span>
+                                                <button class=\"bm-btn bm-btn-ghost\" style=\"padding: 0.35rem 
+0.75rem; font-size: 0.75rem;\">Download Mismatch Report</button>
+                                            </div>
+                                        </div>
+                                    </div>┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖
+                            </div>
+                        </div>┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖
+                    <!-- Detailed Table -->
+                    <div class=\"bm-card\">
+                        <div class=\"bm-card-header\">
+                            <div class=\"bm-card-title\"><i class=\"fas fa-table\"></i> Invoice-wise Analysis</div>
+                            <div>
+                                <button class=\"bm-btn bm-btn-ghost\" onclick=\"filterITCTable('all')\">All</button>
+                                <button class=\"bm-btn bm-btn-ghost\" onclick=\"filterITCTable('risk')\">At 
+Risk</button>
+                                <button class=\"bm-btn bm-btn-secondary\" onclick=\"exportITCReport()\"><i class=\"fas 
+fa-download\"></i> Export</button>
+                            </div>
+                        </div>
+                        <div class=\"bm-table-container\" style=\"max-height: 400px; overflow-y: auto;\">
+                            <table class=\"bm-table\">
+                                <thead>
+                                    <tr>
+                                        <th>#</th>
+                                        <th>Invoice No</th>
+                                        <th>Supplier</th>
+                                        <th>GSTIN</th>
+                                        <th>ITC Amount</th>
+                                        <th>Status</th>
+                                        <th>Action</th>
+                                    </tr>
+                                </thead>
+                                <tbody>┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖
+                                        <tr class=\"itc-row safe\">
+                                            <td>1</td>
+                                            <td style=\"font-family: var(--bm-font-mono); font-size: 
+0.8rem;\">INV-1</td>
+                                            <td>Unknown</td>
+                                            <td style=\"font-family: var(--bm-font-mono); font-size: 
+0.75rem;\">07AABCU9603R1ZM</td>
+                                            <td style=\"font-weight: 600;\">Γé╣180</td>
+                                            <td>
+                                                <span class=\"bm-risk-badge\" style=\"background: #00FF8820; color: 
+#00FF88; padding: 0.2rem 0.5rem; border-radius: 4px; font-size: 0.7rem;\">
+                                                    <i class=\"fas fa-check-circle\"></i> Eligible ITC
+                                                </span>
+                                            </td>
+                                            <td>
+                                                <button class=\"bm-btn bm-btn-ghost\" style=\"padding: 0.25rem 0.5rem; 
+font-size: 0.7rem;\" onclick=\"showInvoiceDetails(1)\">
+                                                    <i class=\"fas fa-eye\"></i>
+                                                </button>
+                                            </td>
+                                        </tr>┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖
+                                        <tr class=\"itc-row not_in_2b\">
+                                            <td>2</td>
+                                            <td style=\"font-family: var(--bm-font-mono); font-size: 
+0.8rem;\">INV-2</td>
+                                            <td>Unknown</td>
+                                            <td style=\"font-family: var(--bm-font-mono); font-size: 
+0.75rem;\">07AABCU9603R1ZM</td>
+                                            <td style=\"font-weight: 600;\">Γé╣360</td>
+                                            <td>
+                                                <span class=\"bm-risk-badge\" style=\"background: #FF444420; color: 
+#FF4444; padding: 0.2rem 0.5rem; border-radius: 4px; font-size: 0.7rem;\">
+                                                    <i class=\"fas fa-times-circle\"></i> Not in GSTR-2B
+                                                </span>
+                                            </td>
+                                            <td>
+                                                <button class=\"bm-btn bm-btn-ghost\" style=\"padding: 0.25rem 0.5rem; 
+font-size: 0.7rem;\" onclick=\"showInvoiceDetails(2)\">
+                                                    <i class=\"fas fa-eye\"></i>
+                                                </button>
+                                            </td>
+                                        </tr>┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖
+                                        <tr class=\"itc-row value_mismatch\">
+                                            <td>3</td>
+                                            <td style=\"font-family: var(--bm-font-mono); font-size: 
+0.8rem;\">INV-3</td>
+                                            <td>Unknown</td>
+                                            <td style=\"font-family: var(--bm-font-mono); font-size: 
+0.75rem;\">07AABCU9603R1ZM</td>
+                                            <td style=\"font-weight: 600;\">Γé╣540</td>
+                                            <td>
+                                                <span class=\"bm-risk-badge\" style=\"background: #FF8C0020; color: 
+#FF8C00; padding: 0.2rem 0.5rem; border-radius: 4px; font-size: 0.7rem;\">
+                                                    <i class=\"fas fa-not-equal\"></i> Value Mismatch
+                                                </span>
+                                            </td>
+                                            <td>
+                                                <button class=\"bm-btn bm-btn-ghost\" style=\"padding: 0.25rem 0.5rem; 
+font-size: 0.7rem;\" onclick=\"showInvoiceDetails(3)\">
+                                                    <i class=\"fas fa-eye\"></i>
+                                                </button>
+                                            </td>
+                                        </tr>┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            "
+
+    [0m [90m  97 |[39m             [36mconst[39m result [33m=[39m 
+[33mITCRiskScanner[39m[33m.[39manalyzeITCRisks(purchaseData[33m,[39m gstr2bData)[33m;[39m
+     [90m  98 |[39m             [36mconst[39m html [33m=[39m 
+[33mITCRiskScanner[39m[33m.[39mgenerateSummaryHTML(result)[33m;[39m
+    [31m[1m>[22m[39m[90m  99 |[39m             expect(html)[33m.[39mtoContain([32m'ITC Risk 
+Analysis'[39m)[33m;[39m
+     [90m     |[39m                          [31m[1m^[22m[39m
+     [90m 100 |[39m         })[33m;[39m
+     [90m 101 |[39m         
+     [90m 102 |[39m         test([32m'should escape HTML'[39m[33m,[39m () [33m=>[39m {[0m
+
+      at Object.toContain (tests/algorithms.test.js:99:26)
+
+  ΓùÅ Patent Algorithms Unit Tests ΓÇ║ PAT-003: Shell Company Detector ΓÇ║ should generate HTML report
+
+    expect(received).toContain(expected) // indexOf
+
+    Expected substring: "Shell Company Detection"
+    Received string:    "
+                <div class=\"bm-shell-detect-results animate__animated animate__fadeIn\">
+                    <!-- Risk Summary -->
+                    <div class=\"bm-stats-grid\" style=\"grid-template-columns: repeat(5, 1fr); margin-bottom: 
+1.5rem;\">
+                        <div class=\"bm-stat-card\">
+                            <div class=\"bm-stat-icon\"><i class=\"fas fa-building\"></i></div>
+                            <div class=\"bm-stat-value\">2</div>
+                            <div class=\"bm-stat-label\">Total Suppliers</div>
+                        </div>
+                        <div class=\"bm-stat-card danger\">
+                            <div class=\"bm-stat-icon\"><i class=\"fas fa-skull\"></i></div>
+                            <div class=\"bm-stat-value\">0</div>
+                            <div class=\"bm-stat-label\">High Risk</div>
+                        </div>
+                        <div class=\"bm-stat-card warning\">
+                            <div class=\"bm-stat-icon\"><i class=\"fas fa-exclamation-triangle\"></i></div>
+                            <div class=\"bm-stat-value\">1</div>
+                            <div class=\"bm-stat-label\">Medium Risk</div>
+                        </div>
+                        <div class=\"bm-stat-card info\">
+                            <div class=\"bm-stat-icon\"><i class=\"fas fa-info-circle\"></i></div>
+                            <div class=\"bm-stat-value\">0</div>
+                            <div class=\"bm-stat-label\">Low Risk</div>
+                        </div>
+                        <div class=\"bm-stat-card safe\">
+                            <div class=\"bm-stat-icon\"><i class=\"fas fa-shield-check\"></i></div>
+                            <div class=\"bm-stat-value\">1</div>
+                            <div class=\"bm-stat-label\">Safe</div>
+                        </div>
+                    </div>┬╖
+                    <!-- Pattern Alerts -->┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖
+                    <!-- Suspicious Suppliers -->
+                    <div class=\"bm-card\">
+                        <div class=\"bm-card-header\">
+                            <div class=\"bm-card-title\"><i class=\"fas fa-user-secret\"></i> Suspicious 
+Suppliers</div>
+                            <button class=\"bm-btn bm-btn-secondary\" onclick=\"exportShellReport()\"><i class=\"fas 
+fa-download\"></i> Export</button>
+                        </div>┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖
+                            <div class=\"bm-table-container\" style=\"max-height: 400px; overflow-y: auto;\">
+                                <table class=\"bm-table\">
+                                    <thead>
+                                        <tr>
+                                            <th>#</th>
+                                            <th>Supplier</th>
+                                            <th>GSTIN</th>
+                                            <th>Total Value</th>
+                                            <th>Risk Score</th>
+                                            <th>Indicators</th>
+                                            <th>Action</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖
+                                            <tr style=\"background: rgba(255,215,0,0.1);\">
+                                                <td>1</td>
+                                                <td>Unknown</td>
+                                                <td style=\"font-family: var(--bm-font-mono); font-size: 
+0.75rem;\">07AABCP9603R1ZM</td>
+                                                <td style=\"font-weight: 600;\">Γé╣1.00 Cr</td>
+                                                <td>
+                                                    <div style=\"display: flex; align-items: center; gap: 0.5rem;\">
+                                                        <div style=\"width: 40px; height: 6px; background: 
+var(--bm-bg-tertiary); border-radius: 3px; overflow: hidden;\">
+                                                            <div style=\"width: 55%; height: 100%; background: 
+var(--bm-warning);\"></div>
+                                                        </div>
+                                                        <span style=\"font-size: 0.8rem; font-weight: 600; color: 
+var(--bm-warning);\">55</span>
+                                                    </div>
+                                                </td>
+                                                <td>
+                                                    <div style=\"display: flex; flex-wrap: wrap; gap: 
+0.25rem;\">┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖
+                                                            <span title=\"Round Figure Invoices\" style=\"padding: 
+0.1rem 0.3rem; background: rgba(255,68,68,0.1); border-radius: 4px; font-size: 0.65rem;\">
+                                                                <i class=\"fas fa-bullseye\"></i>
+                                                            
+</span>┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖
+                                                            <span title=\"High Value, Low Frequency\" style=\"padding: 
+0.1rem 0.3rem; background: rgba(255,68,68,0.1); border-radius: 4px; font-size: 0.65rem;\">
+                                                                <i class=\"fas fa-chart-line\"></i>
+                                                            
+</span>┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖
+                                                            <span title=\"Mismatched Business Type\" style=\"padding: 
+0.1rem 0.3rem; background: rgba(255,68,68,0.1); border-radius: 4px; font-size: 0.65rem;\">
+                                                                <i class=\"fas fa-industry\"></i>
+                                                            </span>┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖
+┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬
+╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖
+                                                    </div>
+                                                </td>
+                                                <td>
+                                                    <button class=\"bm-btn bm-btn-ghost\" style=\"padding: 0.25rem 
+0.5rem; font-size: 0.7rem;\" onclick=\"viewSupplierDetails('07AABCP9603R1ZM')\">
+                                                        <i class=\"fas fa-eye\"></i> Details
+                                                    </button>
+                                                </td>
+                                            
+</tr>┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖
+                                    </tbody>
+                                </table>
+                            </div>┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖
+                    </div>
+                </div>
+            "
+
+    [0m [90m 126 |[39m             [36mconst[39m result [33m=[39m 
+[33mShellCompanyDetector[39m[33m.[39manalyzeSuppliers(invoiceData)[33m;[39m
+     [90m 127 |[39m             [36mconst[39m html [33m=[39m 
+[33mShellCompanyDetector[39m[33m.[39mgenerateHTML(result)[33m;[39m
+    [31m[1m>[22m[39m[90m 128 |[39m             expect(html)[33m.[39mtoContain([32m'Shell Company 
+Detection'[39m)[33m;[39m
+     [90m     |[39m                          [31m[1m^[22m[39m
+     [90m 129 |[39m             
+     [90m 130 |[39m             [36mconst[39m cleanResult [33m=[39m 
+[33mShellCompanyDetector[39m[33m.[39manalyzeSuppliers([])[33m;[39m
+     [90m 131 |[39m             [36mconst[39m cleanHtml [33m=[39m 
+[33mShellCompanyDetector[39m[33m.[39mgenerateHTML(cleanResult)[33m;[39m[0m
+
+      at Object.toContain (tests/algorithms.test.js:128:26)
+
+  ΓùÅ Patent Algorithms Unit Tests ΓÇ║ PAT-005: Tax Rate Error Detector ΓÇ║ should generate HTML report
+
+    expect(received).toContain(expected) // indexOf
+
+    Expected substring: "Tax Rate Analysis"
+    Received string:    "
+                <div class=\"bm-tax-rate-results animate__animated animate__fadeIn\">
+                    <!-- Summary Cards -->
+                    <div class=\"bm-stats-grid\" style=\"grid-template-columns: repeat(4, 1fr); margin-bottom: 
+1.5rem;\">
+                        <div class=\"bm-stat-card warning\">
+                            <div class=\"bm-stat-icon\"><i class=\"fas fa-exclamation-circle\"></i></div>
+                            <div class=\"bm-stat-value\">2</div>
+                            <div class=\"bm-stat-label\">Rate Errors Found</div>
+                        </div>
+                        <div class=\"bm-stat-card safe\">
+                            <div class=\"bm-stat-icon\"><i class=\"fas fa-arrow-up\"></i></div>
+                            <div class=\"bm-stat-value\">Γé╣100</div>
+                            <div class=\"bm-stat-label\">Overcharged (Refund Due)</div>
+                        </div>
+                        <div class=\"bm-stat-card danger\">
+                            <div class=\"bm-stat-icon\"><i class=\"fas fa-arrow-down\"></i></div>
+                            <div class=\"bm-stat-value\">Γé╣60</div>
+                            <div class=\"bm-stat-label\">Undercharged (Liability)</div>
+                        </div>
+                        <div class=\"bm-stat-card info\">
+                            <div class=\"bm-stat-icon\"><i class=\"fas fa-balance-scale\"></i></div>
+                            <div class=\"bm-stat-value\">Γé╣40</div>
+                            <div class=\"bm-stat-label\">Net Refund</div>
+                        </div>
+                    </div>┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖
+                        <!-- Error Table -->
+                        <div class=\"bm-card\" style=\"margin-bottom: 1.5rem;\">
+                            <div class=\"bm-card-header\">
+                                <div class=\"bm-card-title\"><i class=\"fas fa-percent\"></i> Tax Rate 
+Discrepancies</div>
+                                <button class=\"bm-btn bm-btn-secondary\" onclick=\"exportTaxRateErrors()\">
+                                    <i class=\"fas fa-download\"></i> Export
+                                </button>
+                            </div>
+                            <div class=\"bm-table-container\" style=\"max-height: 350px; overflow-y: auto;\">
+                                <table class=\"bm-table\">
+                                    <thead>
+                                        <tr>
+                                            <th>#</th>
+                                            <th>Invoice/HSN</th>
+                                            <th>Description</th>
+                                            <th>Charged</th>
+                                            <th>Correct</th>
+                                            <th>Impact</th>
+                                            <th>Type</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖
+                                            <tr>
+                                                <td>1</td>
+                                                <td>
+                                                    <div style=\"font-size: 0.8rem; font-family: 
+var(--bm-font-mono);\">Row 1</div>
+                                                    <div style=\"font-size: 0.7rem; color: 
+var(--bm-text-secondary);\">HSN: 8517</div>
+                                                </td>
+                                                <td style=\"max-width: 200px; overflow: hidden; text-overflow: 
+ellipsis;\"></td>
+                                                <td style=\"color: var(--bm-warning); font-weight: 600;\">12%</td>
+                                                <td style=\"color: var(--bm-safe); font-weight: 600;\">18%</td>
+                                                <td style=\"font-weight: 600;\">Γé╣60</td>
+                                                <td>
+                                                    <span class=\"bm-risk-badge\" style=\"background: 
+rgba(255,68,68,0.15); color: var(--bm-danger); padding: 0.2rem 0.5rem; border-radius: 4px; font-size: 0.7rem;\">
+                                                        Γåô Pay
+                                                    </span>
+                                                </td>
+                                            
+</tr>┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖
+                                            <tr>
+                                                <td>4</td>
+                                                <td>
+                                                    <div style=\"font-size: 0.8rem; font-family: 
+var(--bm-font-mono);\">Row 4</div>
+                                                    <div style=\"font-size: 0.7rem; color: 
+var(--bm-text-secondary);\">HSN: 8517</div>
+                                                </td>
+                                                <td style=\"max-width: 200px; overflow: hidden; text-overflow: 
+ellipsis;\">Smartphone</td>
+                                                <td style=\"color: var(--bm-danger); font-weight: 600;\">28%</td>
+                                                <td style=\"color: var(--bm-safe); font-weight: 600;\">18%</td>
+                                                <td style=\"font-weight: 600;\">Γé╣100</td>
+                                                <td>
+                                                    <span class=\"bm-risk-badge\" style=\"background: 
+rgba(0,255,136,0.15); color: var(--bm-safe); padding: 0.2rem 0.5rem; border-radius: 4px; font-size: 0.7rem;\">
+                                                        Γåæ Refund
+                                                    </span>
+                                                </td>
+                                            
+</tr>┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖
+                    <!-- Recommendations -->┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖
+                        <div class=\"bm-card\">
+                            <div class=\"bm-card-header\">
+                                <div class=\"bm-card-title\"><i class=\"fas fa-lightbulb\"></i> Recommended 
+Actions</div>
+                            </div>
+                            <div style=\"display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); 
+gap: 1rem;\">┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖
+                                    <div style=\"padding: 1rem; background: var(--bm-bg-secondary); border-radius: 
+12px; border-left: 4px solid var(--bm-safe);\">
+                                        <div style=\"display: flex; align-items: center; gap: 0.75rem; margin-bottom: 
+0.5rem;\">
+                                            <i class=\"fas fa-hand-holding-usd\" style=\"color: var(--bm-safe); 
+font-size: 1.25rem;\"></i>
+                                            <h4 style=\"margin: 0; font-size: 0.9rem;\">Claim Excess Tax Refund</h4>
+                                        </div>
+                                        <p style=\"font-size: 0.8rem; color: var(--bm-text-secondary); margin-bottom: 
+0.75rem;\">You have been overcharged GST of Γé╣100. File for refund under Section 54.</p>
+                                        <button class=\"bm-btn bm-btn-ghost\" style=\"font-size: 0.75rem;\">Generate 
+Refund Application</button>
+                                    </div>┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖
+                                    <div style=\"padding: 1rem; background: var(--bm-bg-secondary); border-radius: 
+12px; border-left: 4px solid var(--bm-danger);\">
+                                        <div style=\"display: flex; align-items: center; gap: 0.75rem; margin-bottom: 
+0.5rem;\">
+                                            <i class=\"fas fa-exclamation-triangle\" style=\"color: var(--bm-danger); 
+font-size: 1.25rem;\"></i>
+                                            <h4 style=\"margin: 0; font-size: 0.9rem;\">Pay Differential Tax</h4>
+                                        </div>
+                                        <p style=\"font-size: 0.8rem; color: var(--bm-text-secondary); margin-bottom: 
+0.75rem;\">You have been undercharged GST of Γé╣60. Pay immediately to avoid interest & penalty.</p>
+                                        <button class=\"bm-btn bm-btn-ghost\" style=\"font-size: 0.75rem;\">Calculate 
+Interest & Pay</button>
+                                    </div>┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖
+                                    <div style=\"padding: 1rem; background: var(--bm-bg-secondary); border-radius: 
+12px; border-left: 4px solid var(--bm-neon-cyan);\">
+                                        <div style=\"display: flex; align-items: center; gap: 0.75rem; margin-bottom: 
+0.5rem;\">
+                                            <i class=\"fas fa-graduation-cap\" style=\"color: var(--bm-neon-cyan); 
+font-size: 1.25rem;\"></i>
+                                            <h4 style=\"margin: 0; font-size: 0.9rem;\">Train Vendors on HSN Rates</h4>
+                                        </div>
+                                        <p style=\"font-size: 0.8rem; color: var(--bm-text-secondary); margin-bottom: 
+0.75rem;\">Top error-prone HSN codes: 8517. Share correct rate reference with suppliers.</p>
+                                        <button class=\"bm-btn bm-btn-ghost\" style=\"font-size: 0.75rem;\">Generate 
+Training Material</button>
+                                    </div>┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖
+                            </div>
+                        </div>┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖
+                </div>
+            "
+
+    [0m [90m 181 |[39m             [36mconst[39m result [33m=[39m 
+[33mTaxRateErrorDetector[39m[33m.[39manalyzeRates(invoices)[33m;[39m
+     [90m 182 |[39m             [36mconst[39m html [33m=[39m 
+[33mTaxRateErrorDetector[39m[33m.[39mgenerateHTML(result)[33m;[39m
+    [31m[1m>[22m[39m[90m 183 |[39m             expect(html)[33m.[39mtoContain([32m'Tax Rate 
+Analysis'[39m)[33m;[39m
+     [90m     |[39m                          [31m[1m^[22m[39m
+     [90m 184 |[39m         })[33m;[39m
+     [90m 185 |[39m     })[33m;[39m
+     [90m 186 |[39m[0m
+
+      at Object.toContain (tests/algorithms.test.js:183:26)
+
+  ΓùÅ Patent Algorithms Unit Tests ΓÇ║ PAT-006: Missing ITC Recovery Predictor ΓÇ║ should generate HTML report
+
+    expect(received).toContain(expected) // indexOf
+
+    Expected substring: "Missing ITC Recovery"
+    Received string:    "
+                <div class=\"bm-missing-itc-results animate__animated animate__fadeIn\">
+                    <!-- Summary Stats -->
+                    <div class=\"bm-stats-grid\" style=\"grid-template-columns: repeat(4, 1fr); margin-bottom: 
+1.5rem;\">
+                        <div class=\"bm-stat-card safe\">
+                            <div class=\"bm-stat-icon\"><i class=\"fas fa-coins\"></i></div>
+                            <div class=\"bm-stat-value\">Γé╣900</div>
+                            <div class=\"bm-stat-label\">Unclaimed ITC Available</div>
+                        </div>
+                        <div class=\"bm-stat-card info\">
+                            <div class=\"bm-stat-icon\"><i class=\"fas fa-file-invoice\"></i></div>
+                            <div class=\"bm-stat-value\">2</div>
+                            <div class=\"bm-stat-label\">Invoices Not in Books</div>
+                        </div>
+                        <div class=\"bm-stat-card danger\">
+                            <div class=\"bm-stat-icon\"><i class=\"fas fa-fire\"></i></div>
+                            <div class=\"bm-stat-value\">0</div>
+                            <div class=\"bm-stat-label\">Expiring This Month</div>
+                        </div>
+                        <div class=\"bm-stat-card warning\">
+                            <div class=\"bm-stat-icon\"><i class=\"fas fa-clock\"></i></div>
+                            <div class=\"bm-stat-value\">0</div>
+                            <div class=\"bm-stat-label\">Expiring Next Month</div>
+                        </div>
+                    </div>┬╖
+                    <!-- Expiring ITC Alert -->┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖
+                    <!-- Supplier Follow-up List -->
+                    <div class=\"bm-card\" style=\"margin-bottom: 1.5rem;\">
+                        <div class=\"bm-card-header\">
+                            <div class=\"bm-card-title\"><i class=\"fas fa-building\"></i> Suppliers to Contact</div>
+                            <button class=\"bm-btn bm-btn-secondary\" onclick=\"generateBulkFollowup()\"><i 
+class=\"fas fa-envelope\"></i> Bulk Email</button>
+                        </div>
+                        <div style=\"display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 
+1rem;\">┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖
+                                <div style=\"background: var(--bm-bg-secondary); border-radius: 12px; padding: 1rem; 
+border: 1px solid var(--bm-border);\">
+                                    <div style=\"display: flex; justify-content: space-between; align-items: start; 
+margin-bottom: 0.75rem;\">
+                                        <div>
+                                            <h4 style=\"font-size: 0.9rem; margin: 0 0 0.25rem;\">Unknown Supplier</h4>
+                                            <span style=\"font-size: 0.7rem; font-family: var(--bm-font-mono); color: 
+var(--bm-text-secondary);\">07AABCU9603R1ZM</span>
+                                        </div>
+                                        <span class=\"bm-badge\" style=\"background: var(--bm-safe)20; color: 
+var(--bm-safe); padding: 0.2rem 0.5rem; border-radius: 4px; font-size: 0.7rem;\">2 invoices</span>
+                                    </div>
+                                    <div style=\"display: flex; justify-content: space-between; align-items: center;\">
+                                        <span style=\"font-size: 1.1rem; font-weight: 700; color: 
+var(--bm-neon-cyan);\">Γé╣900</span>
+                                        <button class=\"bm-btn bm-btn-ghost\" style=\"font-size: 0.7rem;\" 
+onclick=\"sendSupplierReminder('07AABCU9603R1ZM')\"><i class=\"fab fa-whatsapp\"></i> Remind</button>
+                                    </div>
+                                </div>┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖
+                        </div>
+                    </div>┬╖
+                    <!-- All Missing Invoices -->
+                    <div class=\"bm-card\">
+                        <div class=\"bm-card-header\">
+                            <div class=\"bm-card-title\"><i class=\"fas fa-list\"></i> All Missing Invoices</div>
+                            <button class=\"bm-btn bm-btn-secondary\" onclick=\"exportMissingITC()\"><i class=\"fas 
+fa-download\"></i> Export</button>
+                        </div>
+                        <div class=\"bm-table-container\" style=\"max-height: 350px; overflow-y: auto;\">
+                            <table class=\"bm-table\">
+                                <thead>
+                                    <tr>
+                                        <th>#</th>
+                                        <th>Invoice No</th>
+                                        <th>Supplier</th>
+                                        <th>Date</th>
+                                        <th>ITC Amount</th>
+                                        <th>Expiry</th>
+                                        <th>Status</th>
+                                    </tr>
+                                </thead>
+                                <tbody>┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖
+                                        <tr>
+                                            <td>1</td>
+                                            <td style=\"font-family: var(--bm-font-mono); font-size: 
+0.8rem;\">INV-3</td>
+                                            <td>Unknown Supplier</td>
+                                            <td style=\"font-size: 0.8rem;\"></td>
+                                            <td style=\"font-weight: 600;\">Γé╣360</td>
+                                            <td style=\"font-size: 0.8rem; color: var(--bm-text-secondary);\">
+                                                NaN days
+                                            </td>
+                                            <td>
+                                                <span class=\"bm-urgency-badge low\" style=\"padding: 0.2rem 0.5rem; 
+border-radius: 4px; font-size: 0.65rem; background: var(--bm-safe)20; color: var(--bm-safe);\">
+                                                    LOW
+                                                </span>
+                                            </td>
+                                        </tr>┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖
+                                        <tr>
+                                            <td>2</td>
+                                            <td style=\"font-family: var(--bm-font-mono); font-size: 
+0.8rem;\">INV-4</td>
+                                            <td>Unknown Supplier</td>
+                                            <td style=\"font-size: 0.8rem;\"></td>
+                                            <td style=\"font-weight: 600;\">Γé╣540</td>
+                                            <td style=\"font-size: 0.8rem; color: var(--bm-text-secondary);\">
+                                                NaN days
+                                            </td>
+                                            <td>
+                                                <span class=\"bm-urgency-badge low\" style=\"padding: 0.2rem 0.5rem; 
+border-radius: 4px; font-size: 0.65rem; background: var(--bm-safe)20; color: var(--bm-safe);\">
+                                                    LOW
+                                                </span>
+                                            </td>
+                                        </tr>┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖┬╖
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            "
+
+    [0m [90m 219 |[39m             [36mconst[39m result [33m=[39m 
+[33mMissingITCRecovery[39m[33m.[39manalyzeMissingITC(purchaseData[33m,[39m gstr2bData)[33m;[39m
+     [90m 220 |[39m             [36mconst[39m html [33m=[39m 
+[33mMissingITCRecovery[39m[33m.[39mgenerateHTML(result)[33m;[39m
+    [31m[1m>[22m[39m[90m 221 |[39m             expect(html)[33m.[39mtoContain([32m'Missing ITC 
+Recovery'[39m)[33m;[39m
+     [90m     |[39m                          [31m[1m^[22m[39m
+     [90m 222 |[39m         })[33m;[39m
+     [90m 223 |[39m     })[33m;[39m
+     [90m 224 |[39m })[33m;[39m[0m
+
+      at Object.toContain (tests/algorithms.test.js:221:26)
+
+PASS tests/ai.test.js
+  ΓùÅ Console
+
+    console.log
+      SQLite database initialized
+
+      at log (services/database.js:64:13)
+
+    console.log
+      {"level":"info","message":"::ffff:127.0.0.1 - - [14/May/2026:05:34:16 +0000] \"POST /api/v1/auth/register 
+HTTP/1.1\" 409 68 \"-\" \"-\"","timestamp":"2026-05-14T05:34:16.442Z"}
+
+      at Console.log (node_modules/winston/lib/winston/transports/console.js:87:23)
+
+    console.log
+      {"level":"info","message":"::ffff:127.0.0.1 - - [14/May/2026:05:34:16 +0000] \"POST /api/v1/auth/login 
+HTTP/1.1\" 200 708 \"-\" \"-\"","timestamp":"2026-05-14T05:34:16.788Z"}
+
+      at Console.log (node_modules/winston/lib/winston/transports/console.js:87:23)
+
+    console.log
+      {"endpoint":"/ask","level":"info","message":"API 
+Request","method":"POST","timestamp":"2026-05-14T05:34:16.799Z","userId":"USR-1778733092907-58773e80eeeb"}
+
+      at Console.log (node_modules/winston/lib/winston/transports/console.js:87:23)
+
+    console.log
+      {"level":"info","message":"::ffff:127.0.0.1 - - [14/May/2026:05:34:16 +0000] \"POST /api/v1/ai/ask HTTP/1.1\" 
+200 194 \"-\" \"-\"","timestamp":"2026-05-14T05:34:16.803Z"}
+
+      at Console.log (node_modules/winston/lib/winston/transports/console.js:87:23)
+
+    console.log
+      {"endpoint":"/ask","level":"info","message":"API 
+Request","method":"POST","timestamp":"2026-05-14T05:34:16.810Z","userId":"USR-1778733092907-58773e80eeeb"}
+
+      at Console.log (node_modules/winston/lib/winston/transports/console.js:87:23)
+
+    console.log
+      {"level":"info","message":"::ffff:127.0.0.1 - - [14/May/2026:05:34:16 +0000] \"POST /api/v1/ai/ask HTTP/1.1\" 
+400 74 \"-\" \"-\"","timestamp":"2026-05-14T05:34:16.812Z"}
+
+      at Console.log (node_modules/winston/lib/winston/transports/console.js:87:23)
+
+PASS tests/tax.test.js
+  ΓùÅ Console
+
+    console.log
+      SQLite database initialized
+
+      at log (services/database.js:64:13)
+
+    console.log
+      {"level":"info","message":"::ffff:127.0.0.1 - - [14/May/2026:05:34:16 +0000] \"POST /api/v1/auth/register 
+HTTP/1.1\" 409 68 \"-\" \"-\"","timestamp":"2026-05-14T05:34:16.407Z"}
+
+      at Console.log (node_modules/winston/lib/winston/transports/console.js:87:23)
+
+    console.log
+      {"level":"info","message":"::ffff:127.0.0.1 - - [14/May/2026:05:34:16 +0000] \"POST /api/v1/auth/login 
+HTTP/1.1\" 200 711 \"-\" \"-\"","timestamp":"2026-05-14T05:34:16.756Z"}
+
+      at Console.log (node_modules/winston/lib/winston/transports/console.js:87:23)
+
+    console.log
+      {"endpoint":"/calculate-income-tax","level":"info","message":"API 
+Request","method":"POST","timestamp":"2026-05-14T05:34:16.768Z","userId":"USR-1778686714019-01adcf1ce8d1"}
+
+      at Console.log (node_modules/winston/lib/winston/transports/console.js:87:23)
+
+    console.log
+      {"level":"info","message":"::ffff:127.0.0.1 - - [14/May/2026:05:34:16 +0000] \"POST 
+/api/v1/tax/calculate-income-tax HTTP/1.1\" 200 1895 \"-\" \"-\"","timestamp":"2026-05-14T05:34:16.772Z"}
+
+      at Console.log (node_modules/winston/lib/winston/transports/console.js:87:23)
+
+    console.log
+      {"endpoint":"/calculate-income-tax","level":"info","message":"API 
+Request","method":"POST","timestamp":"2026-05-14T05:34:16.779Z","userId":"USR-1778686714019-01adcf1ce8d1"}
+
+      at Console.log (node_modules/winston/lib/winston/transports/console.js:87:23)
+
+    console.log
+      {"level":"info","message":"::ffff:127.0.0.1 - - [14/May/2026:05:34:16 +0000] \"POST 
+/api/v1/tax/calculate-income-tax HTTP/1.1\" 200 4028 \"-\" \"-\"","timestamp":"2026-05-14T05:34:16.797Z"}
+
+      at Console.log (node_modules/winston/lib/winston/transports/console.js:87:23)
+
+    console.log
+      {"endpoint":"/calculate-income-tax","level":"info","message":"API 
+Request","method":"POST","timestamp":"2026-05-14T05:34:16.802Z","userId":"USR-1778686714019-01adcf1ce8d1"}
+
+      at Console.log (node_modules/winston/lib/winston/transports/console.js:87:23)
+
+    console.log
+      {"level":"info","message":"::ffff:127.0.0.1 - - [14/May/2026:05:34:16 +0000] \"POST 
+/api/v1/tax/calculate-income-tax HTTP/1.1\" 400 76 \"-\" \"-\"","timestamp":"2026-05-14T05:34:16.803Z"}
+
+      at Console.log (node_modules/winston/lib/winston/transports/console.js:87:23)
+
+    console.log
+      {"endpoint":"/calculate-hra","level":"info","message":"API 
+Request","method":"POST","timestamp":"2026-05-14T05:34:16.810Z","userId":"USR-1778686714019-01adcf1ce8d1"}
+
+      at Console.log (node_modules/winston/lib/winston/transports/console.js:87:23)
+
+    console.log
+      {"level":"info","message":"::ffff:127.0.0.1 - - [14/May/2026:05:34:16 +0000] \"POST /api/v1/tax/calculate-hra 
+HTTP/1.1\" 200 242 \"-\" \"-\"","timestamp":"2026-05-14T05:34:16.812Z"}
+
+      at Console.log (node_modules/winston/lib/winston/transports/console.js:87:23)
+
+    console.log
+      {"endpoint":"/slabs/2025-26","level":"info","message":"API 
+Request","method":"GET","timestamp":"2026-05-14T05:34:16.818Z","userId":"USR-1778686714019-01adcf1ce8d1"}
+
+      at Console.log (node_modules/winston/lib/winston/transports/console.js:87:23)
+
+    console.log
+      {"level":"info","message":"::ffff:127.0.0.1 - - [14/May/2026:05:34:16 +0000] \"GET /api/v1/tax/slabs/2025-26 
+HTTP/1.1\" 200 704 \"-\" \"-\"","timestamp":"2026-05-14T05:34:16.821Z"}
+
+      at Console.log (node_modules/winston/lib/winston/transports/console.js:87:23)
+
+PASS tests/gst.test.js
+  ΓùÅ Console
+
+    console.log
+      SQLite database initialized
+
+      at log (services/database.js:64:13)
+
+    console.log
+      {"level":"info","message":"::ffff:127.0.0.1 - - [14/May/2026:05:34:16 +0000] \"POST /api/v1/auth/register 
+HTTP/1.1\" 409 68 \"-\" \"-\"","timestamp":"2026-05-14T05:34:16.428Z"}
+
+      at Console.log (node_modules/winston/lib/winston/transports/console.js:87:23)
+
+    console.log
+      {"level":"info","message":"::ffff:127.0.0.1 - - [14/May/2026:05:34:16 +0000] \"POST /api/v1/auth/login 
+HTTP/1.1\" 200 711 \"-\" \"-\"","timestamp":"2026-05-14T05:34:16.778Z"}
+
+      at Console.log (node_modules/winston/lib/winston/transports/console.js:87:23)
+
+    console.log
+      {"endpoint":"/validate-gstin","level":"info","message":"API 
+Request","method":"POST","timestamp":"2026-05-14T05:34:16.788Z","userId":"USR-1778686714021-e04f52713bda"}
+
+      at Console.log (node_modules/winston/lib/winston/transports/console.js:87:23)
+
+    console.log
+      [PAT-001] GSTIN validated: 07****1ZM, Risk: safe
+
+      at log (routes/gst.js:66:17)
+
+    console.log
+      {"level":"info","message":"::ffff:127.0.0.1 - - [14/May/2026:05:34:16 +0000] \"POST /api/v1/gst/validate-gstin 
+HTTP/1.1\" 200 978 \"-\" \"-\"","timestamp":"2026-05-14T05:34:16.795Z"}
+
+      at Console.log (node_modules/winston/lib/winston/transports/console.js:87:23)
+
+    console.log
+      {"endpoint":"/validate-gstin","level":"info","message":"API 
+Request","method":"POST","timestamp":"2026-05-14T05:34:16.803Z","userId":"USR-1778686714021-e04f52713bda"}
+
+      at Console.log (node_modules/winston/lib/winston/transports/console.js:87:23)
+
+    console.log
+      {"level":"info","message":"::ffff:127.0.0.1 - - [14/May/2026:05:34:16 +0000] \"POST /api/v1/gst/validate-gstin 
+HTTP/1.1\" 400 115 \"-\" \"-\"","timestamp":"2026-05-14T05:34:16.804Z"}
+
+      at Console.log (node_modules/winston/lib/winston/transports/console.js:87:23)
+
+    console.log
+      {"endpoint":"/analyze-itc-risk","level":"info","message":"API 
+Request","method":"POST","timestamp":"2026-05-14T05:34:16.810Z","userId":"USR-1778686714021-e04f52713bda"}
+
+      at Console.log (node_modules/winston/lib/winston/transports/console.js:87:23)
+
+    console.log
+      {"level":"info","message":"::ffff:127.0.0.1 - - [14/May/2026:05:34:16 +0000] \"POST /api/v1/gst/analyze-itc-risk 
+HTTP/1.1\" 200 1297 \"-\" \"-\"","timestamp":"2026-05-14T05:34:16.835Z"}
+
+      at Console.log (node_modules/winston/lib/winston/transports/console.js:87:23)
+
+    console.log
+      {"endpoint":"/detect-shell-companies","level":"info","message":"API 
+Request","method":"POST","timestamp":"2026-05-14T05:34:16.840Z","userId":"USR-1778686714021-e04f52713bda"}
+
+      at Console.log (node_modules/winston/lib/winston/transports/console.js:87:23)
+
+    console.log
+      {"level":"info","message":"::ffff:127.0.0.1 - - [14/May/2026:05:34:16 +0000] \"POST 
+/api/v1/gst/detect-shell-companies HTTP/1.1\" 200 841 \"-\" \"-\"","timestamp":"2026-05-14T05:34:16.843Z"}
+
+      at Console.log (node_modules/winston/lib/winston/transports/console.js:87:23)
+
+    console.log
+      {"endpoint":"/verify-rates","level":"info","message":"API 
+Request","method":"POST","timestamp":"2026-05-14T05:34:16.850Z","userId":"USR-1778686714021-e04f52713bda"}
+
+      at Console.log (node_modules/winston/lib/winston/transports/console.js:87:23)
+
+    console.log
+      {"level":"info","message":"::ffff:127.0.0.1 - - [14/May/2026:05:34:16 +0000] \"POST /api/v1/gst/verify-rates 
+HTTP/1.1\" 200 1120 \"-\" \"-\"","timestamp":"2026-05-14T05:34:16.852Z"}
+
+      at Console.log (node_modules/winston/lib/winston/transports/console.js:87:23)
+
+    console.log
+      {"endpoint":"/predict-itc-recovery","level":"info","message":"API 
+Request","method":"POST","timestamp":"2026-05-14T05:34:16.858Z","userId":"USR-1778686714021-e04f52713bda"}
+
+      at Console.log (node_modules/winston/lib/winston/transports/console.js:87:23)
+
+    console.log
+      {"level":"info","message":"::ffff:127.0.0.1 - - [14/May/2026:05:34:16 +0000] \"POST 
+/api/v1/gst/predict-itc-recovery HTTP/1.1\" 200 1069 \"-\" \"-\"","timestamp":"2026-05-14T05:34:16.860Z"}
+
+      at Console.log (node_modules/winston/lib/winston/transports/console.js:87:23)
+
+--------------------------|---------|----------|---------|---------|--------------------------------------------------------------------------------------------------------------
+File                      | % Stmts | % Branch | % Funcs | % Lines | Uncovered Line #s                                                                                            
+--------------------------|---------|----------|---------|---------|--------------------------------------------------------------------------------------------------------------
+All files                 |   49.45 |       34 |   46.66 |   51.45 |                                                                                                              
+ backend                  |   79.66 |       50 |    12.5 |   79.31 |                                                                                                              
+  server.js               |   79.66 |       50 |    12.5 |   79.31 | 108-109,113-114,118,123,163,228,241-244                                                                      
+ backend/algorithms       |   54.43 |    35.54 |   53.28 |   57.72 |                                                                                                              
+  gstinValidator.js       |    22.9 |    11.65 |   10.44 |   23.76 | 172-174,184-186,202-206,216-217,239-240,243-244,253-254,267-268,276-277,443-783,887-1137,1162-1410,1458-1755 
+  itcRiskScanner.js       |   74.78 |     57.3 |     100 |   79.62 | 94-108,141,169,191,196-200,241                                                                               
+  missingITCRecovery.js   |   83.33 |    58.69 |   77.77 |      90 | 63-64,66-67,153-157,234                                                                                      
+  shellCompanyDetector.js |   79.16 |    57.27 |      84 |   83.33 | 84-86,92-93,136-138,142,160,204-208,225,241,251,273-274,316                                                  
+  taxOptimizer.js         |   93.33 |    77.41 |   88.23 |   96.03 | 267,351,431-434                                                                                              
+  taxRateErrorDetector.js |   67.53 |    46.61 |      90 |   81.25 | 188-210,243                                                                                                  
+ backend/middleware       |    38.7 |    13.55 |   28.57 |    38.7 |                                                                                                              
+  auth.js                 |    46.8 |    28.57 |   33.33 |    46.8 | 25,35,48,55,80-97,110-126,134-151,161-177                                                                    
+  errorHandler.js         |   13.33 |        0 |       0 |   13.33 | 6-54                                                                                                         
+ backend/routes           |   37.31 |    32.69 |   34.78 |   38.09 |                                                                                                              
+  ai.js                   |   47.88 |    34.69 |   33.33 |   49.27 | 17,38-49,78,88,115,129-137,180-181,197-224,239-277,291-305                                                   
+  analytics.js            |   15.68 |        0 |       0 |   15.68 | 18-21,31-79,92-126,139-164                                                                                   
+  auth.js                 |   46.59 |    34.61 |      40 |   46.59 | 30,56,65,73,84,100-156,174,183,192,241-242,256-318,332-348                                                   
+  documents.js            |    9.58 |        0 |       0 |   11.29 | 18-33,37-148,162-187                                                                                         
+  financial-model.js      |    5.19 |        0 |       0 |    5.47 | 15-197                                                                                                       
+  gst.js                  |   54.46 |    31.48 |   85.71 |   55.45 | 39,73-74,94,102,118-119,139,155-156,176,192-193,213,221,237-238,253-328                                      
+  tax.js                  |      75 |    85.89 |      80 |   72.54 | 34,111-112,127-150,168,205-206                                                                               
+ backend/services         |   61.53 |    18.18 |   41.66 |   61.53 |                                                                                                              
+  database.js             |   61.53 |    18.18 |   41.66 |   61.53 | 14,69-73,92-93,99-108,122-133                                                                                
+--------------------------|---------|----------|---------|---------|--------------------------------------------------------------------------------------------------------------
+
+Test Suites: 1 failed, 3 passed, 4 total
+Tests:       5 failed, 33 passed, 38 total
+Snapshots:   0 total
+Time:        2.491 s
+Ran all test suites.
