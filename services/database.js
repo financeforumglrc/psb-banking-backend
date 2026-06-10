@@ -353,16 +353,24 @@ function initializeDatabase() {
         // Column likely already exists
     }
 
+    // Migration: add aadhar column for KYC
+    try {
+        db.exec(`ALTER TABLE users ADD COLUMN aadhar TEXT`);
+        console.log('Migration applied: added aadhar column');
+    } catch (e) {
+        // Column likely already exists
+    }
+
     console.log('SQLite database initialized');
 }
 
 const userDb = {
     create: (user) => {
         const stmt = db.prepare(`
-            INSERT INTO users (id, email, password, name, phone, role, tier)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO users (id, email, password, name, phone, role, tier, pan_number, aadhar)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         `);
-        return stmt.run(user.id, user.email, user.password, user.name, user.phone || null, user.role || 'user', user.tier || 'free');
+        return stmt.run(user.id, user.email, user.password, user.name, user.phone || null, user.role || 'user', user.tier || 'free', user.pan_number || null, user.aadhar || null);
     },
 
     findByEmail: (email) => {

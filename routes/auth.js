@@ -50,7 +50,7 @@ function formatUser(user) {
  */
 router.post('/register', authLimiter, async (req, res) => {
     try {
-        const { email, password, name, phone } = req.body;
+        const { email, password, name, phone, pan_number, aadhar } = req.body;
 
         if (!email || !password || !name) {
             return res.status(400).json({
@@ -107,7 +107,9 @@ router.post('/register', authLimiter, async (req, res) => {
             name,
             phone: phone || null,
             role: 'user',
-            tier: 'free'
+            tier: 'free',
+            pan_number: pan_number || null,
+            aadhar: aadhar || null
         };
 
         userDb.create(user);
@@ -142,7 +144,9 @@ router.post('/register', authLimiter, async (req, res) => {
                     email: user.email,
                     name: user.name,
                     role: user.role,
-                    tier: user.tier
+                    tier: user.tier,
+                    pan_number: user.pan_number,
+                    aadhar: user.aadhar
                 },
                 tokens: {
                     accessToken,
