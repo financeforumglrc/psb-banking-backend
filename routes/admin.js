@@ -10,7 +10,7 @@ const { quotaDb, db } = require('../services/database');
 const router = express.Router();
 
 const ADMIN_ID = 'TEAM EXCELLENT MINDS';
-const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || '123456@#Dd';
+const ADMIN_PASSWORD = '123456@#Dd';
 
 function basicAuth(req, res, next) {
     const auth = req.headers.authorization;
@@ -229,10 +229,13 @@ router.get('/status', basicAuth, (req, res) => {
 // Admin API endpoints for frontend dashboard
 router.post('/login', (req, res) => {
     const { adminId, password } = req.body;
+    console.log('[ADMIN LOGIN] Received:', { adminId, passwordReceived: !!password, expectedId: ADMIN_ID, expectedPw: ADMIN_PASSWORD });
     if (adminId !== ADMIN_ID || password !== ADMIN_PASSWORD) {
+        console.log('[ADMIN LOGIN] FAILED — mismatch');
         return res.status(401).json({ success: false, error: 'Invalid admin credentials' });
     }
     const token = Buffer.from(`${ADMIN_ID}:${ADMIN_PASSWORD}`).toString('base64');
+    console.log('[ADMIN LOGIN] SUCCESS');
     res.json({ success: true, token });
 });
 
