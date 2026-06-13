@@ -15,7 +15,7 @@ services:
       - key: ADMIN_ID
         value: TEAM EXCELLENT MINDS
       - key: ADMIN_PASSWORD
-        value: Kcwkl6OQT57VweVSeSjgA7W4!@A1
+        value: Kcwkl6OQT57VweVSeSjgA7W4
       - key: ENCRYPTION_KEY
         value: cd48f7cf9b62f765a187def78daac0b4695aec55c896069efd92c3daa9a257d0
       - key: GEMINI_API_KEY
