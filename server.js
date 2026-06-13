@@ -194,7 +194,8 @@ app.use('/api/v1/ai', authMiddleware, aiLimiter, aiRoutes);
 app.use('/api/v1/extract', authMiddleware, aiLimiter, extractRoutes);
 app.use('/api/v1/export', authMiddleware, exportRoutes);
 app.use('/api/v1/gallery', galleryRoutes);
-app.use('/api/v1/admin', authMiddleware, requireRole('admin'), adminRoutes);
+// Admin routes handle their own auth (login is public; users/stats require admin JWT cookie)
+app.use('/api/v1/admin', adminRoutes);
 app.use('/api/v1/documents', authMiddleware, documentRoutes);
 app.use('/api/v1/analytics', authMiddleware, requireRole('admin'), analyticsRoutes);
 app.use('/api/v1/financial-model', authMiddleware, financialModelRoutes);

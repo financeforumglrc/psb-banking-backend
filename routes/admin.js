@@ -8,6 +8,7 @@ const fs = require('fs');
 const path = require('path');
 const jwt = require('jsonwebtoken');
 const { quotaDb, db } = require('../services/database');
+const { authMiddleware, requireRole } = require('../middleware/auth');
 const router = express.Router();
 
 const ADMIN_ID = process.env.ADMIN_ID || 'TEAM EXCELLENT MINDS';
@@ -251,7 +252,7 @@ router.post('/login', (req, res) => {
     res.json({ success: true, token });
 });
 
-router.get('/users', adminApiAuth, (req, res) => {
+router.get('/users', authMiddleware, requireRole('admin'), (req, res) => {
     try {
         const users = db.prepare(`
             SELECT id, email, name, phone, role, tier, pan_number, aadhar, 
@@ -267,7 +268,7 @@ router.get('/users', adminApiAuth, (req, res) => {
     }
 });
 
-router.get('/stats', adminApiAuth, (req, res) => {
+router.get('/stats', authMiddleware, requireRole('admin'), (req, res) => {
     try {
         const totalUsers = db.prepare('SELECT COUNT(*) as count FROM users').get();
         const faceRegistered = db.prepare('SELECT COUNT(*) as count FROM users WHERE face_descriptor IS NOT NULL').get();
