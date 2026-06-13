@@ -26,6 +26,30 @@ const authLimiter = rateLimit({
 const { userDb, sessionDb } = require('../services/database');
 const { authMiddleware } = require('../middleware/auth');
 
+const isProduction = process.env.NODE_ENV === 'production';
+
+function setAuthCookies(res, accessToken, refreshToken) {
+    const accessOptions = {
+        httpOnly: true,
+        secure: isProduction,
+        sameSite: isProduction ? 'none' : 'lax',
+        maxAge: 7 * 24 * 60 * 60 * 1000
+    };
+    const refreshOptions = {
+        httpOnly: true,
+        secure: isProduction,
+        sameSite: isProduction ? 'none' : 'lax',
+        maxAge: 30 * 24 * 60 * 60 * 1000
+    };
+    res.cookie('accessToken', accessToken, accessOptions);
+    if (refreshToken) res.cookie('refreshToken', refreshToken, refreshOptions);
+}
+
+function clearAuthCookies(res) {
+    res.clearCookie('accessToken');
+    res.clearCookie('refreshToken');
+}
+
 function formatUser(user) {
     return {
         id: user.id,
@@ -135,6 +159,8 @@ router.post('/register', authLimiter, async (req, res) => {
             expiresAt: expiresAt.toISOString()
         });
 
+        setAuthCookies(res, accessToken, refreshToken);
+
         res.status(201).json({
             success: true,
             message: 'User registered successfully',
@@ -223,6 +249,8 @@ router.post('/login', authLimiter, async (req, res) => {
             expiresAt: expiresAt.toISOString()
         });
 
+        setAuthCookies(res, accessToken, refreshToken);
+
         res.json({
             success: true,
             message: 'Login successful',
@@ -258,7 +286,7 @@ router.post('/login', authLimiter, async (req, res) => {
  */
 router.post('/refresh', (req, res) => {
     try {
-        const { refreshToken } = req.body;
+        const refreshToken = req.cookies?.refreshToken || req.body?.refreshToken;
 
         if (!refreshToken) {
             return res.status(400).json({
@@ -303,6 +331,8 @@ router.post('/refresh', (req, res) => {
             { expiresIn: process.env.JWT_EXPIRE || '7d' }
         );
 
+        setAuthCookies(res, accessToken);
+
         res.json({
             success: true,
             data: {
@@ -326,6 +356,16 @@ router.post('/refresh', (req, res) => {
             details: error.message
         });
     }
+});
+
+/**
+ * @route   POST /api/v1/auth/logout
+ * @desc    Clear authentication cookies
+ * @access  Public
+ */
+router.post('/logout', (req, res) => {
+    clearAuthCookies(res);
+    res.json({ success: true, message: 'Logged out successfully' });
 });
 
 /**
@@ -388,6 +428,25 @@ function euclideanDistance(a, b) {
     }
     return Math.sqrt(sum);
 }
+
+/**
+ * @route   POST /api/v1/auth/face-register
+ * @desc    Register a face descriptor for the authenticated user
+ * @access  Private
+ */
+router.post('/face-register', authMiddleware, (req, res) => {
+    try {
+        const { descriptor } = req.body;
+        if (!Array.isArray(descriptor) || descriptor.length !== 128) {
+            return res.status(400).json({ success: false, error: 'A valid 128-element face descriptor is required' });
+        }
+        userDb.updateFaceDescriptor(req.user.id, JSON.stringify(descriptor));
+        res.json({ success: true, message: 'Face descriptor registered' });
+    } catch (error) {
+        console.error('Face register error:', error);
+        res.status(500).json({ success: false, error: 'Face registration failed' });
+    }
+});
 
 /**
  * @route   POST /api/v1/auth/face-verify
@@ -458,6 +517,8 @@ router.post('/face-verify', authLimiter, (req, res) => {
             expiresAt: expiresAt.toISOString()
         });
 
+        setAuthCookies(res, accessToken, refreshToken);
+
         res.json({
             success: true,
             message: 'Face login successful',
@@ -470,6 +531,62 @@ router.post('/face-verify', authLimiter, (req, res) => {
     } catch (error) {
         console.error('Face verify error:', error);
         res.status(500).json({ success: false, error: 'Face verification failed', code: 'FACE_VERIFY_ERROR' });
+    }
+});
+
+/**
+ * @route   POST /api/v1/auth/demo-login
+ * @desc    Login or create a demo account (for quick-login tiles)
+ * @access  Public
+ */
+router.post('/demo-login', authLimiter, async (req, res) => {
+    try {
+        const { email, name } = req.body;
+        if (!email || !name) {
+            return res.status(400).json({ success: false, error: 'Email and name required' });
+        }
+
+        let user = userDb.findByEmail(email);
+        if (!user) {
+            const id = require('crypto').randomUUID();
+            userDb.create({
+                id,
+                email,
+                password: bcrypt.hashSync(require('crypto').randomBytes(24).toString('hex'), 12),
+                name,
+                role: 'user',
+                tier: 'premium'
+            });
+            user = userDb.findByEmail(email);
+        }
+
+        const accessToken = jwt.sign(
+            { id: user.id, email: user.email, role: user.role, tier: user.tier },
+            process.env.JWT_SECRET,
+            { expiresIn: process.env.JWT_EXPIRE || '7d' }
+        );
+        const refreshToken = jwt.sign(
+            { id: user.id, type: 'refresh' },
+            process.env.JWT_SECRET,
+            { expiresIn: process.env.JWT_REFRESH_EXPIRE || '30d' }
+        );
+
+        const expiresAt = new Date();
+        expiresAt.setDate(expiresAt.getDate() + 30);
+        sessionDb.create({ userId: user.id, refreshToken, expiresAt: expiresAt.toISOString() });
+
+        setAuthCookies(res, accessToken, refreshToken);
+
+        res.json({
+            success: true,
+            message: 'Demo login successful',
+            data: {
+                user: { id: user.id, email: user.email, name: user.name, role: user.role, tier: user.tier }
+            }
+        });
+    } catch (error) {
+        console.error('Demo login error:', error);
+        res.status(500).json({ success: false, error: 'Demo login failed' });
     }
 });
 

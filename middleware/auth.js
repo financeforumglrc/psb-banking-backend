@@ -41,40 +41,14 @@ function ensureJwtSecret() {
 const authMiddleware = (req, res, next) => {
     try {
         const authHeader = req.headers.authorization;
-        const devEmail = req.headers['x-dev-user-email'];
-        const devSecret = req.headers['x-dev-auth-secret'];
-
-        // Dev/demo mode: strictly opt-in via environment. Never enabled in production.
-        if (process.env.ALLOW_DEV_AUTH_BYPASS === 'true' && devEmail && devSecret) {
-            const expectedDevSecret = process.env.DEV_AUTH_SECRET;
-            if (expectedDevSecret && devSecret === expectedDevSecret) {
-                let user = userDb.findByEmail(devEmail);
-                if (!user) {
-                    const id = require('crypto').randomUUID();
-                    const bcrypt = require('bcryptjs');
-                    userDb.create({ id, email: devEmail, password: bcrypt.hashSync('demo123', 12), name: devEmail.split('@')[0], role: 'user', tier: 'premium' });
-                    user = userDb.findByEmail(devEmail);
-                }
-                req.user = { id: user.id, email: user.email, role: user.role || 'user', tier: user.tier || 'free' };
-                return next();
-            }
-        }
-
-        if (!authHeader || !authHeader.startsWith('Bearer ')) {
-            return res.status(401).json({
-                success: false,
-                error: 'Access token required',
-                code: 'TOKEN_MISSING'
-            });
-        }
-
-        const token = authHeader.substring(7);
+        const cookieToken = req.cookies?.accessToken;
+        const token = cookieToken || (authHeader?.startsWith('Bearer ') ? authHeader.substring(7) : null);
 
         if (!token) {
             return res.status(401).json({
                 success: false,
-                error: 'Invalid token format',
-                code: 'TOKEN_INVALID'
+                error: 'Access token required',
+                code: 'TOKEN_MISSING'
             });
         }
 

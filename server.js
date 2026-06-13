@@ -10,6 +10,7 @@ const cors = require('cors');
 const helmet = require('helmet');
 const morgan = require('morgan');
 const rateLimit = require('express-rate-limit');
+const cookieParser = require('cookie-parser');
 const winston = require('winston');
 require('dotenv').config();
 
@@ -60,6 +61,7 @@ const app = express();
 const PORT = process.env.PORT || 5000;
 
 // Security middleware
+app.use(cookieParser());
 app.use(helmet({
     contentSecurityPolicy: {
         directives: {
