@@ -11,13 +11,13 @@ services:
       - key: PORT
         value: 10000
       - key: JWT_SECRET
-        generateValue: true
+        value: 106472ec4a66767a6690423351bcc087c944a671828caa3b4ee27a6bbf9ac10c5d55342122349c674411951a3879f2ba
       - key: ADMIN_ID
         value: TEAM EXCELLENT MINDS
       - key: ADMIN_PASSWORD
-        generateValue: true
+        value: Kcwkl6OQT57VweVSeSjgA7W4!@A1
       - key: ENCRYPTION_KEY
-        generateValue: true
+        value: cd48f7cf9b62f765a187def78daac0b4695aec55c896069efd92c3daa9a257d0
       - key: GEMINI_API_KEY
         value: 
       - key: DATABASE_PATH
