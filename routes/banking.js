@@ -119,7 +119,20 @@ router.get('/transactions', authMiddleware, (req, res) => {
 
         res.json({ success: true, count: txns.length, data: txns });
     } catch (err) {
-        res.status(500).json({ success: false, error: err.message });
+        res.status(500).json({ success: false, error: 'Failed to load transactions' });
+    }
+});
+
+// MPIN verification (demo gatekeeper — replace with per-user hashed PIN in production)
+router.post('/verify-mpin', authMiddleware, (req, res) => {
+    try {
+        const { mpin } = req.body;
+        const expected = process.env.DEMO_MPIN || '123456';
+        const valid = String(mpin).length === 6 && mpin === expected;
+        res.json({ success: true, valid });
+    } catch (err) {
+        console.error('MPIN verify error:', err);
+        res.status(500).json({ success: false, error: 'MPIN verification failed' });
     }
 });
 

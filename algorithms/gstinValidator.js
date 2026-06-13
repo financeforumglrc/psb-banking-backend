@@ -222,11 +222,13 @@ const GSTINValidatorPro = {
 
         // Check 7: Checksum Validation
         result.checksPerformed.push({ check: 'Checksum Verification', status: 'pending' });
+        let checksumValid = true;
         const calculatedChecksum = this.calculateChecksum(gstin);
         if (calculatedChecksum !== gstin[14]) {
             result.checksPerformed[6].status = 'fail';
             result.alerts.push({ type: 'error', message: `Checksum mismatch. Expected: ${calculatedChecksum}` });
             result.riskScore += 40;
+            checksumValid = false;
         } else {
             result.checksPerformed[6].status = 'pass';
         }
@@ -274,6 +276,11 @@ const GSTINValidatorPro = {
             result.isValid = false;
         } else {
             result.riskLevel = 'critical';
+            result.isValid = false;
+        }
+
+        // Checksum failures always invalidate the GSTIN regardless of other scores
+        if (!checksumValid) {
             result.isValid = false;
         }
 
@@ -328,7 +335,7 @@ const GSTINValidatorPro = {
                                 </div>
                             </div>
                             <span class="bm-risk-badge" style="margin-top: 0.5rem; display: inline-block; padding: 0.25rem 0.75rem; border-radius: 20px; font-size: 0.7rem; font-weight: 600; background: ${riskColors[result.riskLevel]}20; color: ${riskColors[result.riskLevel]}; text-transform: uppercase;">
-                                <i class="fas ${riskIcons[result.riskLevel]}"></i> ${result.riskLevel.replace('-', ' ')}
+                                <i class="fas ${riskIcons[result.riskLevel]}"></i> ${result.riskLevel}
                             </span>
                         </div>
                     </div>
