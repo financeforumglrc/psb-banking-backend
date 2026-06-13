@@ -1,4 +1,4 @@
-process.env.JWT_SECRET = 'testsecret';
+process.env.JWT_SECRET = 'test-secret-must-be-at-least-32-characters-long-for-jwt';
 const request = require('supertest');
 const app = require('../server');
 const { authMiddleware, requireRole, requireTier, apiKeyMiddleware } = require('../middleware/auth');

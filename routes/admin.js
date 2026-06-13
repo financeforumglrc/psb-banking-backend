@@ -6,11 +6,16 @@
 const express = require('express');
 const fs = require('fs');
 const path = require('path');
+const jwt = require('jsonwebtoken');
 const { quotaDb, db } = require('../services/database');
 const router = express.Router();
 
-const ADMIN_ID = 'TEAM EXCELLENT MINDS';
-const ADMIN_PASSWORD = '123456@#Dd';
+const ADMIN_ID = process.env.ADMIN_ID || 'TEAM EXCELLENT MINDS';
+const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || '123456@#Dd';
+
+if (!process.env.ADMIN_PASSWORD && process.env.NODE_ENV === 'production') {
+    throw new Error('FATAL: ADMIN_PASSWORD environment variable is required in production');
+}
 
 function basicAuth(req, res, next) {
     const auth = req.headers.authorization;
@@ -27,17 +32,11 @@ function basicAuth(req, res, next) {
     next();
 }
 
-// JWT-based admin auth for frontend API calls
+// Note: API routes are protected by authMiddleware + requireRole('admin') in server.js.
+// This function remains for any route that needs an explicit admin check.
 function adminApiAuth(req, res, next) {
-    const auth = req.headers.authorization;
-    if (!auth || !auth.startsWith('Bearer ')) {
-        return res.status(401).json({ success: false, error: 'Admin token required' });
-    }
-    const token = auth.substring(7);
-    // Simple token check: base64 of ADMIN_ID:ADMIN_PASSWORD
-    const expected = Buffer.from(`${ADMIN_ID}:${ADMIN_PASSWORD}`).toString('base64');
-    if (token !== expected) {
-        return res.status(401).json({ success: false, error: 'Invalid admin token' });
+    if (!req.user || req.user.role !== 'admin') {
+        return res.status(403).json({ success: false, error: 'Admin access required' });
     }
     next();
 }
@@ -229,13 +228,17 @@ router.get('/status', basicAuth, (req, res) => {
 // Admin API endpoints for frontend dashboard
 router.post('/login', (req, res) => {
     const { adminId, password } = req.body;
-    console.log('[ADMIN LOGIN] Received:', { adminId, passwordReceived: !!password, expectedId: ADMIN_ID, expectedPw: ADMIN_PASSWORD });
+    if (!adminId || !password) {
+        return res.status(400).json({ success: false, error: 'Admin ID and password required' });
+    }
     if (adminId !== ADMIN_ID || password !== ADMIN_PASSWORD) {
-        console.log('[ADMIN LOGIN] FAILED — mismatch');
         return res.status(401).json({ success: false, error: 'Invalid admin credentials' });
     }
-    const token = Buffer.from(`${ADMIN_ID}:${ADMIN_PASSWORD}`).toString('base64');
-    console.log('[ADMIN LOGIN] SUCCESS');
+    const token = jwt.sign(
+        { id: ADMIN_ID, role: 'admin', tier: 'enterprise' },
+        process.env.JWT_SECRET,
+        { algorithm: 'HS256', expiresIn: '24h' }
+    );
     res.json({ success: true, token });
 });
 
@@ -260,7 +263,7 @@ router.get('/stats', adminApiAuth, (req, res) => {
         const totalUsers = db.prepare('SELECT COUNT(*) as count FROM users').get();
         const faceRegistered = db.prepare('SELECT COUNT(*) as count FROM users WHERE face_descriptor IS NOT NULL').get();
         const activeToday = db.prepare("SELECT COUNT(*) as count FROM users WHERE last_login > datetime('now', '-1 day')").get();
-        const totalAccounts = db.prepare('SELECT COUNT(*) as count FROM accounts').get();
+        const totalAccounts = db.prepare('SELECT COUNT(*) as count FROM bank_accounts').get();
         const totalTransactions = db.prepare('SELECT COUNT(*) as count FROM transactions').get();
         const totalBills = db.prepare('SELECT COUNT(*) as count FROM bills').get();
         const totalGoals = db.prepare('SELECT COUNT(*) as count FROM goals').get();

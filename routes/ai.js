@@ -181,8 +181,7 @@ router.post('/ask', async (req, res) => {
         res.status(500).json({
             success: false,
             error: 'AI service temporarily unavailable',
-            code: 'AI_ERROR',
-            message: error.message
+            code: 'AI_ERROR'
         });
     }
 });
@@ -351,7 +350,7 @@ router.post('/test', async (req, res) => {
         console.error('AI test error:', error);
         res.status(500).json({
             success: false,
-            error: 'AI test failed: ' + error.message,
+            error: 'AI test failed',
             code: 'AI_TEST_ERROR',
         });
     }
@@ -377,7 +376,7 @@ router.post('/test-key', async (req, res) => {
 
         res.json({ success: true, valid: true, provider, response: result.text });
     } catch (error) {
-        res.json({ success: true, valid: false, error: error.message });
+        res.json({ success: true, valid: false, error: 'API key validation failed' });
     }
 });
 
@@ -441,6 +440,9 @@ ${JSON.stringify(model_snapshot || {}, null, 2).substring(0, 40000)}
                 byok,
             });
 
+            deviceDb.increment(deviceId, 'chat');
+            if (!byok) quotaDb.increment('chat');
+
             const stream = streamResult.stream;
             for await (const chunk of stream) {
                 const text = chunk.text?.() || chunk.choices?.[0]?.delta?.content || '';
@@ -464,7 +466,8 @@ ${JSON.stringify(model_snapshot || {}, null, 2).substring(0, 40000)}
         }
     } catch (error) {
         console.error('AI chat error:', error);
-        res.status(500).json({ success: false, error: 'Chat failed: ' + error.message });
+        console.error('AI chat error:', error);
+        res.status(500).json({ success: false, error: 'Chat failed' });
     }
 });
 
@@ -501,7 +504,7 @@ router.post('/explain-cell', async (req, res) => {
         res.json({ success: true, explanation: result.json, provider: result.provider });
     } catch (error) {
         console.error('Explain cell error:', error);
-        res.status(500).json({ success: false, error: 'Explanation failed: ' + error.message });
+        res.status(500).json({ success: false, error: 'Explanation failed' });
     }
 });
 
@@ -567,7 +570,7 @@ RULES:
         res.json({ success: true, memo: result.json, provider: result.provider });
     } catch (error) {
         console.error('Memo generation error:', error);
-        res.status(500).json({ success: false, error: 'Memo generation failed: ' + error.message });
+        res.status(500).json({ success: false, error: 'Memo generation failed' });
     }
 });
 

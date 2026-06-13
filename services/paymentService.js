@@ -78,7 +78,10 @@ class PaymentService {
             .update(body)
             .digest('hex');
 
-        return expectedSignature === signature;
+        const expectedBuf = Buffer.from(expectedSignature, 'hex');
+        const signatureBuf = Buffer.from(signature, 'hex');
+        if (expectedBuf.length !== signatureBuf.length) return false;
+        return crypto.timingSafeEqual(expectedBuf, signatureBuf);
     }
 
     async createSubscription(planId, userId) {

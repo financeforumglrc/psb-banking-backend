@@ -13,6 +13,27 @@ const logger = winston.createLogger({
     transports: [new winston.transports.Console()]
 });
 
+const DEFAULT_WEAK_SECRETS = [
+    'ds-financial-dev-secret-key-2024-secure',
+    'your-super-secret-jwt-key-min-64-chars-long-change-this-immediately',
+    'secret',
+    'test',
+    ''
+];
+
+/**
+ * Validates that JWT_SECRET is configured and strong.
+ * Call this once during server startup.
+ */
+function ensureJwtSecret() {
+    const secret = process.env.JWT_SECRET;
+    if (!secret || secret.length < 32 || DEFAULT_WEAK_SECRETS.includes(secret)) {
+        const msg = 'FATAL: JWT_SECRET is missing, too short (< 32 chars), or uses a known weak/default value. Set a strong random secret before starting the server.';
+        logger.error(msg);
+        throw new Error(msg);
+    }
+}
+
 /**
  * JWT Authentication Middleware
  * Verifies access token and attaches user to request
@@ -21,21 +42,24 @@ const authMiddleware = (req, res, next) => {
     try {
         const authHeader = req.headers.authorization;
         const devEmail = req.headers['x-dev-user-email'];
+        const devSecret = req.headers['x-dev-auth-secret'];
 
-        // Dev/demo mode: allow x-dev-user-email header for hackathon demos (enabled in production for judge demos)
-        if (devEmail) {
-            let user = userDb.findByEmail(devEmail);
-            if (!user) {
-                const { v4: uuidv4 } = require('crypto');
-                const id = require('crypto').randomUUID();
-                const bcrypt = require('bcryptjs');
-                userDb.create({ id, email: devEmail, password: bcrypt.hashSync('demo123', 12), name: devEmail.split('@')[0], role: 'user', tier: 'premium' });
-                user = userDb.findByEmail(devEmail);
+        // Dev/demo mode: strictly opt-in via environment. Never enabled in production.
+        if (process.env.ALLOW_DEV_AUTH_BYPASS === 'true' && devEmail && devSecret) {
+            const expectedDevSecret = process.env.DEV_AUTH_SECRET;
+            if (expectedDevSecret && devSecret === expectedDevSecret) {
+                let user = userDb.findByEmail(devEmail);
+                if (!user) {
+                    const id = require('crypto').randomUUID();
+                    const bcrypt = require('bcryptjs');
+                    userDb.create({ id, email: devEmail, password: bcrypt.hashSync('demo123', 12), name: devEmail.split('@')[0], role: 'user', tier: 'premium' });
+                    user = userDb.findByEmail(devEmail);
+                }
+                req.user = { id: user.id, email: user.email, role: user.role || 'user', tier: user.tier || 'free' };
+                return next();
             }
-            req.user = { id: user.id, email: user.email, role: user.role || 'user', tier: user.tier || 'free' };
-            return next();
         }
-        
+
         if (!authHeader || !authHeader.startsWith('Bearer ')) {
             return res.status(401).json({
                 success: false,
@@ -45,7 +69,7 @@ const authMiddleware = (req, res, next) => {
         }
 
         const token = authHeader.substring(7);
-        
+
         if (!token) {
             return res.status(401).json({
                 success: false,
@@ -54,9 +78,20 @@ const authMiddleware = (req, res, next) => {
             });
         }
 
-        // Verify token
-        const decoded = jwt.verify(token, process.env.JWT_SECRET);
-        
+        // Verify token and pin algorithm to prevent algorithm switching attacks
+        const decoded = jwt.verify(token, process.env.JWT_SECRET, { algorithms: ['HS256'] });
+
+        // Admin service tokens carry role directly and are not tied to a DB user
+        if (decoded.role === 'admin') {
+            req.user = {
+                id: decoded.id,
+                email: decoded.id,
+                role: 'admin',
+                tier: decoded.tier || 'enterprise'
+            };
+            return next();
+        }
+
         // Verify user still exists and is active
         const user = userDb.findById(decoded.id);
         if (!user) {
@@ -73,7 +108,7 @@ const authMiddleware = (req, res, next) => {
                 code: 'ACCOUNT_DISABLED'
             });
         }
-        
+
         // Attach user info to request (use latest data from DB, not stale token data)
         req.user = {
             id: user.id,
@@ -99,7 +134,7 @@ const authMiddleware = (req, res, next) => {
                 code: 'TOKEN_EXPIRED'
             });
         }
-        
+
         if (error.name === 'JsonWebTokenError') {
             return res.status(401).json({
                 success: false,
@@ -174,7 +209,7 @@ const requireTier = (...tiers) => {
  */
 const apiKeyMiddleware = (req, res, next) => {
     const apiKey = req.headers['x-api-key'];
-    
+
     if (!apiKey) {
         return res.status(401).json({
             success: false,
@@ -200,5 +235,6 @@ module.exports = {
     authMiddleware,
     requireRole,
     requireTier,
-    apiKeyMiddleware
+    apiKeyMiddleware,
+    ensureJwtSecret
 };

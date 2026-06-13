@@ -12,8 +12,12 @@ services:
         value: 10000
       - key: JWT_SECRET
         generateValue: true
+      - key: ADMIN_ID
+        value: TEAM EXCELLENT MINDS
       - key: ADMIN_PASSWORD
-        value: dsf-admin-2024
+        generateValue: true
+      - key: ENCRYPTION_KEY
+        generateValue: true
       - key: GEMINI_API_KEY
         value: 
       - key: DATABASE_PATH

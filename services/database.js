@@ -468,6 +468,8 @@ const quotaDb = {
         return row;
     },
     increment: (task) => {
+        const allowed = new Set(['extract', 'chat', 'explain', 'memo']);
+        if (!allowed.has(task)) throw new Error('Invalid quota task');
         const col = task + '_used';
         const stmt = db.prepare(`UPDATE server_quota SET ${col} = ${col} + 1, updated_at = datetime('now') WHERE id = 1`);
         return stmt.run();
@@ -501,6 +503,8 @@ const deviceDb = {
         return row;
     },
     increment: (deviceId, task) => {
+        const allowed = new Set(['extract', 'chat', 'explain', 'memo']);
+        if (!allowed.has(task)) throw new Error('Invalid device quota task');
         const col = task + '_count_today';
         const stmt = db.prepare(`UPDATE device_ids SET ${col} = ${col} + 1 WHERE device_id = ?`);
         return stmt.run(deviceId);

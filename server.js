@@ -35,7 +35,10 @@ const kycRoutes = require('./routes/kyc');
 
 // Import middleware
 const { errorHandler } = require('./middleware/errorHandler');
-const { authMiddleware, requireRole } = require('./middleware/auth');
+const { authMiddleware, requireRole, ensureJwtSecret } = require('./middleware/auth');
+
+// Validate JWT secret before accepting traffic
+ensureJwtSecret();
 
 // Initialize logger
 const logger = winston.createLogger({
@@ -62,7 +65,7 @@ app.use(helmet({
         directives: {
             defaultSrc: ["'self'"],
             styleSrc: ["'self'", "'unsafe-inline'", "https://cdnjs.cloudflare.com", "https://fonts.googleapis.com"],
-            scriptSrc: ["'self'", "'unsafe-inline'"],
+            scriptSrc: ["'self'"],
             fontSrc: ["'self'", "https://fonts.gstatic.com", "https://cdnjs.cloudflare.com"],
             imgSrc: ["'self'", "data:", "https:"],
             connectSrc: ["'self'", "https://api.gst.gov.in", "https://openrouter.ai", "https://api.groq.com", "https://api-inference.huggingface.co", "https://api.anthropic.com", "https://generativelanguage.googleapis.com", "https://api.openai.com"]
@@ -81,7 +84,7 @@ app.use(cors({
         : ['http://localhost:3000', 'http://localhost:5173', 'http://127.0.0.1:5500', 'https://dsfinancial-47556.surge.sh', 'https://psb-securewealth-2026-new.surge.sh'],
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'X-API-Key', 'X-BYOK-Key', 'X-Device-Id', 'X-Dev-User-Email']
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-API-Key', 'X-BYOK-Key', 'X-Device-Id']
 }));
 
 // Rate limiting
@@ -135,7 +138,15 @@ app.get('/financial-modelling-v2', (req, res) => {
 
 // Serve any .js tab module requested directly (tab_screener.js etc.)
 app.get('/tab_:name.js', (req, res) => {
-    res.sendFile(path.join(__dirname, '..', `tab_${req.params.name}.js`));
+    const allowed = new Set(['screener', 'charts', 'portfolio', 'tax', 'gst']);
+    if (!allowed.has(req.params.name)) {
+        return res.status(400).send('Invalid tab module');
+    }
+    const filePath = path.resolve(__dirname, '..', `tab_${req.params.name}.js`);
+    if (!filePath.startsWith(path.resolve(__dirname, '..'))) {
+        return res.status(400).send('Invalid path');
+    }
+    res.sendFile(filePath);
 });
 app.get('/extracted_functions.js', (req, res) => {
     res.sendFile(path.join(__dirname, '..', 'extracted_functions.js'));
@@ -148,7 +159,7 @@ app.get('/api/v1/health', (req, res) => {
         message: 'DS Financial API is running',
         version: '2.0.0',
         timestamp: new Date().toISOString(),
-        environment: process.env.NODE_ENV,
+        environment: process.env.NODE_ENV === 'production' ? 'production' : 'non-production',
         patents: {
             total: 47,
             phase1: 7,
@@ -176,12 +187,12 @@ const authLimiter = rateLimit({
 app.use('/api/v1/auth', authRoutes);
 app.use('/api/v1/tax', authMiddleware, taxRoutes);
 app.use('/api/v1/gst', authMiddleware, gstRoutes);
-// Phase 2 v2: AI routes are public (portfolio mode, device-id based)
-app.use('/api/v1/ai', aiLimiter, aiRoutes);
-app.use('/api/v1/extract', aiLimiter, extractRoutes);
+// AI/extract/export require authenticated users (quota/cost/security)
+app.use('/api/v1/ai', authMiddleware, aiLimiter, aiRoutes);
+app.use('/api/v1/extract', authMiddleware, aiLimiter, extractRoutes);
+app.use('/api/v1/export', authMiddleware, exportRoutes);
 app.use('/api/v1/gallery', galleryRoutes);
-app.use('/api/v1/export', exportRoutes);
-app.use('/api/v1/admin', adminRoutes);
+app.use('/api/v1/admin', authMiddleware, requireRole('admin'), adminRoutes);
 app.use('/api/v1/documents', authMiddleware, documentRoutes);
 app.use('/api/v1/analytics', authMiddleware, requireRole('admin'), analyticsRoutes);
 app.use('/api/v1/financial-model', authMiddleware, financialModelRoutes);

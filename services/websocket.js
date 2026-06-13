@@ -34,7 +34,7 @@ class WebSocketService {
                     const data = JSON.parse(message);
                     
                     if (data.type === 'auth') {
-                        const decoded = jwt.verify(data.token, process.env.JWT_SECRET);
+                        const decoded = jwt.verify(data.token, process.env.JWT_SECRET, { algorithms: ['HS256'] });
                         ws.userId = decoded.id;
                         // Track multiple connections per user
                         if (!this.clients.has(decoded.id)) {
@@ -56,9 +56,10 @@ class WebSocketService {
                         }));
                     }
                 } catch (error) {
+                    console.error('WebSocket message error:', error);
                     ws.send(JSON.stringify({
                         type: 'error',
-                        message: error.message
+                        message: 'Invalid request'
                     }));
                 }
             });

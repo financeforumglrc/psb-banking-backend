@@ -7,7 +7,7 @@
 const express = require('express');
 const router = express.Router();
 const { bankingDb, db, userDb } = require('../services/database');
-const { authMiddleware } = require('../middleware/auth');
+const { authMiddleware, requireRole } = require('../middleware/auth');
 
 // ========== VALIDATION HELPERS ==========
 function validateRequired(body, fields) {
@@ -104,7 +104,7 @@ router.delete('/accounts/:id', authMiddleware, (req, res) => {
 router.get('/transactions', authMiddleware, (req, res) => {
     try {
         const { limit = 100, type, startDate, endDate, accountId } = req.query;
-        const lim = parseInt(limit) || 100;
+        const lim = Math.min(parseInt(limit) || 100, 1000);
         let txns;
 
         if (accountId) {
@@ -675,7 +675,7 @@ router.delete('/recurring/:id', authMiddleware, (req, res) => {
 // ========== AUDIT LOGS ==========
 router.get('/audit', authMiddleware, (req, res) => {
     try {
-        const limit = parseInt(req.query.limit) || 100;
+        const limit = Math.min(parseInt(req.query.limit) || 100, 1000);
         const rows = bankingDb.getAuditLogsByUser(req.user.id, limit);
         // Map DB columns to frontend expected shape (details = human-readable summary)
         const data = rows.map(row => {
@@ -812,21 +812,21 @@ router.get('/dashboard', authMiddleware, (req, res) => {
     }
 });
 
-// ========== SEED (for judge demos) ==========
+// ========== SEED (admin-only demo data seeding) ==========
 function resolveDemoUser(req) {
-    if (req.user && req.user.id) return req.user;
-    const devEmail = req.headers['x-dev-user-email'] || 'demo@psb.co.in';
-    let user = userDb.findByEmail(devEmail);
+    if (req.user && req.user.role !== 'admin' && req.user.id) return req.user;
+    const targetEmail = req.body?.email || req.query?.email || 'demo@psb.co.in';
+    let user = userDb.findByEmail(targetEmail);
     if (!user) {
         const bcrypt = require('bcryptjs');
         const id = require('crypto').randomUUID();
-        userDb.create({ id, email: devEmail, password: bcrypt.hashSync('demo123', 12), name: devEmail.split('@')[0], role: 'user', tier: 'premium' });
-        user = userDb.findByEmail(devEmail);
+        userDb.create({ id, email: targetEmail, password: bcrypt.hashSync('demo123', 12), name: targetEmail.split('@')[0], role: 'user', tier: 'premium' });
+        user = userDb.findByEmail(targetEmail);
     }
     return user;
 }
 
-router.post('/seed', (req, res) => {
+router.post('/seed', authMiddleware, requireRole('admin'), (req, res) => {
     try {
         const user = resolveDemoUser(req);
         const userId = user.id;
