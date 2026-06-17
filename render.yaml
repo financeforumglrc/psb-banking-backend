@@ -25,7 +25,7 @@ services:
       - key: SENDGRID_API_KEY
         value: 
       - key: SENDGRID_FROM_EMAIL
-        value: noreply@dsfinancial.in
+        value: sdeepu70gg@gmail.com
       - key: SENDGRID_FROM_NAME
         value: PSB SecureWealth
       # Set this in the Render dashboard from the PostgreSQL service.
