@@ -312,11 +312,12 @@ async function flush(sqliteDb) {
             processed++;
         }
 
-        const ids = queueRows.map((r) => r.id);
-        const placeholders = ids.map((_, i) => `$${i + 1}`).join(',');
-        await client.query(`DELETE FROM _pg_sync_queue WHERE id IN (${placeholders})`, ids);
-
         await client.query('COMMIT');
+
+        // Remove flushed rows from the SQLite queue (Postgres does not own this table).
+        const ids = queueRows.map((r) => r.id);
+        const placeholders = ids.map(() => '?').join(',');
+        sqliteDb.prepare(`DELETE FROM _pg_sync_queue WHERE id IN (${placeholders})`).run(...ids);
     } catch (err) {
         await client.query('ROLLBACK');
         console.error('Postgres sync flush failed:', err.message);
