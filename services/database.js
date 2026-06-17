@@ -343,6 +343,37 @@ function initializeDatabase() {
         CREATE INDEX IF NOT EXISTS idx_loans_user ON loans(user_id);
         CREATE INDEX IF NOT EXISTS idx_recurring_user ON recurring_payments(user_id);
         CREATE INDEX IF NOT EXISTS idx_audit_user ON audit_logs(user_id, created_at);
+
+        -- SecureWealth Twin: real device fingerprinting
+        CREATE TABLE IF NOT EXISTS device_fingerprints (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id TEXT NOT NULL,
+            visitor_id TEXT NOT NULL,
+            fingerprint_hash TEXT NOT NULL,
+            first_seen TEXT DEFAULT (datetime('now')),
+            last_seen TEXT DEFAULT (datetime('now')),
+            is_trusted INTEGER DEFAULT 0,
+            created_at TEXT DEFAULT (datetime('now')),
+            FOREIGN KEY (user_id) REFERENCES users(id)
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_device_fingerprints_user ON device_fingerprints(user_id);
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_device_fingerprints_visitor ON device_fingerprints(user_id, visitor_id);
+
+        -- OTP attempts table (email-based OTP flow)
+        CREATE TABLE IF NOT EXISTS otp_attempts (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            recipient TEXT NOT NULL,
+            otp_hash TEXT NOT NULL,
+            purpose TEXT NOT NULL DEFAULT 'secure transaction',
+            attempts INTEGER DEFAULT 0,
+            expires_at TEXT NOT NULL,
+            verified INTEGER DEFAULT 0,
+            created_at TEXT DEFAULT (datetime('now'))
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_otp_recipient ON otp_attempts(recipient, purpose, expires_at);
+        CREATE INDEX IF NOT EXISTS idx_otp_expires ON otp_attempts(expires_at);
     `);
 
     // Migration: add face_descriptor column for biometric login
@@ -750,6 +781,80 @@ const bankingDb = {
     }
 };
 
+const otpDb = {
+    create: (data) => {
+        const stmt = db.prepare(`INSERT INTO otp_attempts (recipient, otp_hash, purpose, attempts, expires_at, verified) VALUES (?, ?, ?, ?, ?, ?)`);
+        return stmt.run(data.recipient, data.otpHash, data.purpose || 'secure transaction', data.attempts || 0, data.expiresAt, data.verified ? 1 : 0);
+    },
+    findActiveByRecipient: (recipient, purpose = 'secure transaction') => {
+        return db.prepare(`SELECT * FROM otp_attempts WHERE recipient = ? AND purpose = ? AND expires_at > datetime('now') AND verified = 0 ORDER BY created_at DESC LIMIT 1`).get(recipient, purpose);
+    },
+    findRecentByRecipient: (recipient, purpose = 'secure transaction', limit = 10) => {
+        return db.prepare(`SELECT * FROM otp_attempts WHERE recipient = ? AND purpose = ? ORDER BY created_at DESC LIMIT ?`).all(recipient, purpose, limit);
+    },
+    incrementAttempts: (id) => {
+        return db.prepare(`UPDATE otp_attempts SET attempts = attempts + 1 WHERE id = ?`).run(id);
+    },
+    markVerified: (id) => {
+        return db.prepare(`UPDATE otp_attempts SET verified = 1 WHERE id = ?`).run(id);
+    },
+    invalidateActive: (recipient, purpose = 'secure transaction') => {
+        return db.prepare(`UPDATE otp_attempts SET verified = -1 WHERE recipient = ? AND purpose = ? AND verified = 0 AND expires_at > datetime('now')`).run(recipient, purpose);
+    },
+    cleanupExpired: () => {
+        return db.prepare(`DELETE FROM otp_attempts WHERE expires_at <= datetime('now', '-1 day')`).run();
+    },
+    getAttemptStats: (recipient, purpose = 'secure transaction') => {
+        const row = db.prepare(`SELECT COUNT(*) as total, SUM(attempts) as total_attempts, MAX(attempts) as max_attempts FROM otp_attempts WHERE recipient = ? AND purpose = ? AND created_at > datetime('now', '-1 day')`).get(recipient, purpose);
+        return row || { total: 0, total_attempts: 0, max_attempts: 0 };
+    }
+};
+
+const deviceFingerprintDb = {
+    create: (data) => {
+        const stmt = db.prepare(`
+            INSERT INTO device_fingerprints (user_id, visitor_id, fingerprint_hash, is_trusted)
+            VALUES (?, ?, ?, ?)
+            ON CONFLICT(user_id, visitor_id) DO UPDATE SET
+                last_seen = datetime('now'),
+                fingerprint_hash = excluded.fingerprint_hash,
+                is_trusted = COALESCE(device_fingerprints.is_trusted, excluded.is_trusted)
+        `);
+        return stmt.run(data.userId, data.visitorId, data.fingerprintHash, data.isTrusted ? 1 : 0);
+    },
+
+    findByUserAndVisitor: (userId, visitorId) => {
+        const stmt = db.prepare('SELECT * FROM device_fingerprints WHERE user_id = ? AND visitor_id = ?');
+        return stmt.get(userId, visitorId);
+    },
+
+    findByUser: (userId) => {
+        const stmt = db.prepare('SELECT * FROM device_fingerprints WHERE user_id = ? ORDER BY last_seen DESC');
+        return stmt.all(userId);
+    },
+
+    setTrusted: (id, isTrusted) => {
+        const stmt = db.prepare('UPDATE device_fingerprints SET is_trusted = ? WHERE id = ?');
+        return stmt.run(isTrusted ? 1 : 0, id);
+    },
+
+    updateLastSeen: (id) => {
+        const stmt = db.prepare("UPDATE device_fingerprints SET last_seen = datetime('now') WHERE id = ?");
+        return stmt.run(id);
+    },
+
+    hasTrustedDevice: (userId) => {
+        const stmt = db.prepare('SELECT COUNT(*) as count FROM device_fingerprints WHERE user_id = ? AND is_trusted = 1');
+        const row = stmt.get(userId);
+        return row && row.count > 0;
+    },
+
+    getTrustStatus: (userId, visitorId, fingerprintHash) => {
+        const stmt = db.prepare('SELECT * FROM device_fingerprints WHERE user_id = ? AND visitor_id = ? AND fingerprint_hash = ?');
+        return stmt.get(userId, visitorId, fingerprintHash);
+    }
+};
+
 module.exports = {
     db,
     userDb,
@@ -760,5 +865,7 @@ module.exports = {
     extractionDb,
     deviceDb,
     modelDb,
-    bankingDb
+    bankingDb,
+    deviceFingerprintDb,
+    otpDb
 };

@@ -6,6 +6,7 @@
 const express = require('express');
 const crypto = require('crypto');
 const router = express.Router();
+const { deviceFingerprintDb, otpDb, userDb } = require('../services/database');
 
 // ═══════════════════════════════════════════════════════════════
 // Risk engine
@@ -16,13 +17,80 @@ function biometricBonus(deviation) {
   return 0;
 }
 
+function getDeviceRisk(req) {
+  const { user_id, visitor_id, fingerprint_hash, device_fingerprint } = req;
+  const visitorId = visitor_id || device_fingerprint?.visitorId || null;
+  const fingerprintHash = fingerprint_hash || device_fingerprint?.fingerprintHash || visitorId || null;
+
+  if (!user_id || !visitorId) {
+    return {
+      isTrustedDevice: false,
+      isNewDevice: true,
+      riskDelta: 20,
+      reason: 'Action initiated from an unrecognized/new device.'
+    };
+  }
+
+  const stored = deviceFingerprintDb.getTrustStatus(user_id, visitorId, fingerprintHash);
+  if (stored) {
+    deviceFingerprintDb.updateLastSeen(stored.id);
+    return {
+      isTrustedDevice: stored.is_trusted === 1,
+      isNewDevice: false,
+      riskDelta: stored.is_trusted === 1 ? 0 : 10,
+      reason: stored.is_trusted === 1
+        ? 'Device fingerprint matches a trusted device.'
+        : 'Device fingerprint recognized but not explicitly trusted.'
+    };
+  }
+
+  return {
+    isTrustedDevice: false,
+    isNewDevice: true,
+    riskDelta: 20,
+    reason: 'Action initiated from an unrecognized/new device.'
+  };
+}
+
+function getRecipient(req) {
+  if (req.email) return String(req.email).trim().toLowerCase();
+  if (req.user_id) {
+    const user = userDb.findById(String(req.user_id));
+    if (user && user.email) return user.email;
+    return String(req.user_id).trim();
+  }
+  return null;
+}
+
 function evaluateWealthProtection(req) {
   let riskScore = 0;
   const factors = [];
 
-  if (!req.is_trusted_device) {
-    riskScore += 20;
-    factors.push('Action initiated from an unrecognized/new device.');
+  // Resolve real OTP attempt stats from the database when available
+  const recipient = getRecipient(req);
+  const purpose = req.purpose || 'secure transaction';
+  let otpAttempts = Number(req.otp_attempts) || 0;
+  let firstTimeOtpLargeAction = false;
+  if (recipient) {
+    try {
+      const stats = otpDb.getAttemptStats(recipient, purpose);
+      const active = otpDb.findActiveByRecipient(recipient, purpose);
+      otpAttempts = Math.max(otpAttempts, Number(stats.total_attempts) || 0);
+      if (stats.total === 0 && req.amount >= 100000) {
+        firstTimeOtpLargeAction = true;
+      }
+      if (active && active.attempts > 0) {
+        otpAttempts = Math.max(otpAttempts, Number(active.attempts));
+      }
+    } catch (e) {
+      // Keep using request values if DB lookup fails
+    }
+  }
+
+  const deviceRisk = getDeviceRisk(req);
+  if (deviceRisk.riskDelta > 0) {
+    riskScore += deviceRisk.riskDelta;
+    factors.push(deviceRisk.reason);
   }
   if (req.seconds_since_login < 10) {
     riskScore += 25;
@@ -32,13 +100,17 @@ function evaluateWealthProtection(req) {
     riskScore += 30;
     factors.push(`Amount ₹${req.amount.toLocaleString('en-IN')} is significantly higher than your usual pattern.`);
   }
-  if (req.otp_attempts > 1) {
-    riskScore += (req.otp_attempts - 1) * 15;
-    factors.push(`Multiple OTP attempts detected (${req.otp_attempts} tries).`);
+  if (otpAttempts > 1) {
+    riskScore += (otpAttempts - 1) * 15;
+    factors.push(`Multiple OTP attempts detected (${otpAttempts} tries).`);
   }
   if (req.is_first_time_investment) {
     riskScore += 15;
     factors.push('This is a first-time payee or investment type for your account.');
+  }
+  if (firstTimeOtpLargeAction) {
+    riskScore += 10;
+    factors.push('First-time email OTP verification requested for a large transaction.');
   }
   if (req.retry_count > 0) {
     riskScore += req.retry_count * 10;
@@ -85,6 +157,11 @@ function evaluateWealthProtection(req) {
     explainable_factors: factors,
     user_message: message,
     reference_id: 'SWT-' + crypto.randomUUID().replace(/-/g, '').slice(0, 10).toUpperCase(),
+    device: {
+      is_trusted_device: deviceRisk.isTrustedDevice,
+      is_new_device: deviceRisk.isNewDevice,
+      risk_delta: deviceRisk.riskDelta
+    }
   };
 }
 

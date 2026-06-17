@@ -23,7 +23,7 @@ const authLimiter = rateLimit({
     legacyHeaders: false
 });
 
-const { userDb, sessionDb } = require('../services/database');
+const { userDb, sessionDb, deviceFingerprintDb } = require('../services/database');
 const { authMiddleware } = require('../middleware/auth');
 
 const isProduction = process.env.NODE_ENV === 'production';
@@ -75,6 +75,9 @@ function formatUser(user) {
 router.post('/register', authLimiter, async (req, res) => {
     try {
         const { email, password, name, phone, pan_number, aadhar } = req.body;
+        const fingerprint = req.body.fingerprint || {};
+        const visitorId = fingerprint.visitorId || req.headers['x-device-id'] || null;
+        const fingerprintHash = fingerprint.fingerprintHash || visitorId || null;
 
         if (!email || !password || !name) {
             return res.status(400).json({
@@ -138,6 +141,16 @@ router.post('/register', authLimiter, async (req, res) => {
 
         userDb.create(user);
 
+        // Store first device fingerprint and mark it trusted
+        if (visitorId) {
+            deviceFingerprintDb.create({
+                userId: user.id,
+                visitorId,
+                fingerprintHash: fingerprintHash || visitorId,
+                isTrusted: true
+            });
+        }
+
         const accessToken = jwt.sign(
             { id: user.id, email: user.email, role: user.role, tier: user.tier },
             process.env.JWT_SECRET,
@@ -199,6 +212,9 @@ router.post('/register', authLimiter, async (req, res) => {
 router.post('/login', authLimiter, async (req, res) => {
     try {
         const { email, password } = req.body;
+        const fingerprint = req.body.fingerprint || {};
+        const visitorId = fingerprint.visitorId || req.headers['x-device-id'] || null;
+        const fingerprintHash = fingerprint.fingerprintHash || visitorId || null;
 
         if (!email || !password) {
             return res.status(400).json({
@@ -227,6 +243,17 @@ router.post('/login', authLimiter, async (req, res) => {
         }
 
         userDb.updateLastLogin(user.id);
+
+        // Record/update device fingerprint. Trust the first fingerprint for this user.
+        if (visitorId) {
+            const isTrusted = !deviceFingerprintDb.hasTrustedDevice(user.id);
+            deviceFingerprintDb.create({
+                userId: user.id,
+                visitorId,
+                fingerprintHash: fingerprintHash || visitorId,
+                isTrusted
+            });
+        }
 
         const accessToken = jwt.sign(
             { id: user.id, email: user.email, role: user.role, tier: user.tier },
@@ -542,6 +569,10 @@ router.post('/face-verify', authLimiter, (req, res) => {
 router.post('/demo-login', authLimiter, async (req, res) => {
     try {
         const { email, name } = req.body;
+        const fingerprint = req.body.fingerprint || {};
+        const visitorId = fingerprint.visitorId || req.headers['x-device-id'] || null;
+        const fingerprintHash = fingerprint.fingerprintHash || visitorId || null;
+
         if (!email || !name) {
             return res.status(400).json({ success: false, error: 'Email and name required' });
         }
@@ -558,6 +589,17 @@ router.post('/demo-login', authLimiter, async (req, res) => {
                 tier: 'premium'
             });
             user = userDb.findByEmail(email);
+        }
+
+        // Record/update device fingerprint. Trust the first fingerprint for this user.
+        if (visitorId) {
+            const isTrusted = !deviceFingerprintDb.hasTrustedDevice(user.id);
+            deviceFingerprintDb.create({
+                userId: user.id,
+                visitorId,
+                fingerprintHash: fingerprintHash || visitorId,
+                isTrusted
+            });
         }
 
         const accessToken = jwt.sign(
@@ -587,6 +629,59 @@ router.post('/demo-login', authLimiter, async (req, res) => {
     } catch (error) {
         console.error('Demo login error:', error);
         res.status(500).json({ success: false, error: 'Demo login failed' });
+    }
+});
+
+/**
+ * @route   GET /api/v1/auth/devices
+ * @desc    List device fingerprints for the authenticated user
+ * @access  Private
+ */
+router.get('/devices', authMiddleware, (req, res) => {
+    try {
+        const devices = deviceFingerprintDb.findByUser(req.user.id).map((d) => ({
+            id: d.id,
+            visitorId: d.visitor_id,
+            fingerprintHash: d.fingerprint_hash,
+            firstSeen: d.first_seen,
+            lastSeen: d.last_seen,
+            isTrusted: d.is_trusted === 1,
+            createdAt: d.created_at
+        }));
+
+        res.json({
+            success: true,
+            data: devices
+        });
+    } catch (error) {
+        console.error('List devices error:', error);
+        res.status(500).json({ success: false, error: 'Failed to list devices', code: 'DEVICES_ERROR' });
+    }
+});
+
+/**
+ * @route   POST /api/v1/auth/trust-device
+ * @desc    Mark a device fingerprint as trusted/untrusted
+ * @access  Private
+ */
+router.post('/trust-device', authMiddleware, (req, res) => {
+    try {
+        const { deviceId, trusted } = req.body;
+        if (!deviceId) {
+            return res.status(400).json({ success: false, error: 'deviceId is required', code: 'DEVICE_ID_MISSING' });
+        }
+
+        // Ensure the device belongs to the current user
+        const device = deviceFingerprintDb.findByUser(req.user.id).find((d) => String(d.id) === String(deviceId));
+        if (!device) {
+            return res.status(404).json({ success: false, error: 'Device not found', code: 'DEVICE_NOT_FOUND' });
+        }
+
+        deviceFingerprintDb.setTrusted(device.id, trusted !== false);
+        res.json({ success: true, message: trusted === false ? 'Device untrusted' : 'Device trusted' });
+    } catch (error) {
+        console.error('Trust device error:', error);
+        res.status(500).json({ success: false, error: 'Failed to update device trust', code: 'TRUST_DEVICE_ERROR' });
     }
 });
 
