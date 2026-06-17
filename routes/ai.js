@@ -574,4 +574,57 @@ RULES:
     }
 });
 
+/**
+ * @route   POST /api/v1/ai/guardian-message
+ * @desc    Generate an empathetic, explainable security message from risk signals
+ * @access  Public
+ */
+router.post('/guardian-message', async (req, res) => {
+    try {
+        const { risk_level, action, factors, amount, payee } = req.body;
+
+        if (!risk_level || !action || !Array.isArray(factors)) {
+            return res.status(400).json({
+                success: false,
+                error: 'risk_level, action, and factors[] are required',
+                code: 'MISSING_FIELDS'
+            });
+        }
+
+        const amountStr = `₹${Number(amount || 0).toLocaleString('en-IN')}`;
+        const payeeStr = payee || 'this contact';
+
+        const systemPrompt = `You are "SecureWealth Guardian", a calm, empathetic AI security assistant for an Indian banking app. Your job is to translate a list of fraud-risk signals into one short, reassuring, plain-English message for the user. Do not use technical jargon. Do not blame the user. Offer a clear next step. Keep it under 3 sentences.`;
+        const userPrompt = `Risk level: ${risk_level}\nAction: ${action}\nAmount: ${amountStr}\nPayee: ${payeeStr}\nRisk signals:\n${factors.map(f => `- ${f}`).join('\n')}\n\nWrite a single empathetic security message.`;
+
+        let message;
+        let source = 'llm';
+
+        try {
+            const result = await callLegacyAI(`${systemPrompt}\n\n${userPrompt}`, { maxTokens: 250, temperature: 0.3 });
+            message = result.content?.trim() || fallbackGuardianMessage(action, amountStr, payeeStr);
+            if (!message) source = 'template';
+        } catch (aiErr) {
+            console.warn('Guardian LLM failed, using template:', aiErr.message);
+            message = fallbackGuardianMessage(action, amountStr, payeeStr);
+            source = 'template';
+        }
+
+        res.json({ success: true, data: { message, source } });
+    } catch (error) {
+        console.error('Guardian message error:', error);
+        res.status(500).json({ success: false, error: 'Guardian message generation failed' });
+    }
+});
+
+function fallbackGuardianMessage(action, amountStr, payeeStr) {
+    if (action === 'ALLOW') {
+        return `Your ${amountStr} request to ${payeeStr} looks safe. It matches your usual patterns and trusted device.`;
+    }
+    if (action === 'WARN' || action === 'WARN_COOL_OFF') {
+        return `🛡️ Security Pause: I noticed you're moving ${amountStr} to ${payeeStr} in a way that doesn't match your normal habits. To protect your wealth, I've placed this on a short cooling-off period. Please verify the OTP I just sent to your registered mobile.`;
+    }
+    return `🛑 I can't let this ${amountStr} transfer to ${payeeStr} proceed right now. Multiple risk signals are active. Please review your recent notifications or contact support — your money stays safe.`;
+}
+
 module.exports = router;

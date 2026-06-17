@@ -33,6 +33,7 @@ const nlpQueryRoutes = require('./routes/nlp-query');
 const screenerRoutes  = require('./routes/screener');
 const bankingRoutes = require('./routes/banking');
 const kycRoutes = require('./routes/kyc');
+const protectionRoutes = require('./routes/protection');
 
 // Import middleware
 const { errorHandler } = require('./middleware/errorHandler');
@@ -58,6 +59,7 @@ const logger = winston.createLogger({
 
 // Initialize Express app
 const app = express();
+app.set('trust proxy', process.env.TRUST_PROXY ? parseInt(process.env.TRUST_PROXY, 10) : 1);
 const PORT = process.env.PORT || 5000;
 
 // Security middleware
@@ -80,10 +82,19 @@ app.use(helmet({
     }
 }));
 
+const allowedOrigins = process.env.NODE_ENV === 'production'
+    ? ['https://dsfinancial.in', 'https://www.dsfinancial.in', 'https://dsfinancial-47556.surge.sh', 'https://psb-securewealth-2026-new.surge.sh']
+    : ['http://localhost:3000', 'http://localhost:5173', 'http://127.0.0.1:5174', 'http://127.0.0.1:5175', 'http://127.0.0.1:5500', 'https://dsfinancial-47556.surge.sh', 'https://psb-securewealth-2026-new.surge.sh'];
+
 app.use(cors({
-    origin: process.env.NODE_ENV === 'production' 
-        ? ['https://dsfinancial.in', 'https://www.dsfinancial.in', 'https://dsfinancial-47556.surge.sh', 'https://psb-securewealth-2026-new.surge.sh'] 
-        : ['http://localhost:3000', 'http://localhost:5173', 'http://127.0.0.1:5500', 'https://dsfinancial-47556.surge.sh', 'https://psb-securewealth-2026-new.surge.sh'],
+    origin: (origin, callback) => {
+        if (!origin) return callback(null, true);
+        if (process.env.NODE_ENV !== 'production' && /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin)) {
+            return callback(null, true);
+        }
+        if (allowedOrigins.includes(origin)) return callback(null, true);
+        callback(new Error(`Origin ${origin} not allowed by CORS`));
+    },
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization', 'X-API-Key', 'X-BYOK-Key', 'X-Device-Id']
@@ -267,6 +278,9 @@ app.get('/api/v1/patents', (req, res) => {
         }
     });
 });
+
+// SecureWealth Twin protection API (mirrors the FastAPI microservice)
+app.use('/', protectionRoutes);
 
 // Static file serving - ONLY serve from public directory, never parent dirs
 app.use(express.static(path.join(__dirname, '..', 'public'), {
