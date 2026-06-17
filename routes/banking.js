@@ -1131,3 +1131,80 @@ router.post('/seed', authMiddleware, requireRole('admin'), (req, res) => {
 });
 
 module.exports = router;
+
+// ========== BUSINESS / SME CASH FLOW ANALYZER ==========
+router.get('/business/cashflow', authMiddleware, (req, res) => {
+    try {
+        const transactions = bankingDb.getTransactionsByUser(req.user.id, 1000);
+
+        // Aggregate by YYYY-MM
+        const monthlyMap = new Map();
+        const now = new Date();
+        for (let i = 5; i >= 0; i--) {
+            const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+            const key = d.toISOString().slice(0, 7);
+            monthlyMap.set(key, { month: key, inflow: 0, outflow: 0 });
+        }
+
+        transactions.forEach(tx => {
+            if (!tx.created_at) return;
+            const key = tx.created_at.slice(0, 7);
+            if (!monthlyMap.has(key)) return;
+            const entry = monthlyMap.get(key);
+            const amount = Number(tx.amount) || 0;
+            // Treat credits/received as inflow, debits/payments as outflow
+            if (['credit', 'deposit', 'refund', 'interest'].includes(tx.type) || amount < 0) {
+                entry.inflow += Math.abs(amount);
+            } else {
+                entry.outflow += Math.abs(amount);
+            }
+        });
+
+        const cashflow = Array.from(monthlyMap.values());
+        const totalInflow = cashflow.reduce((s, c) => s + c.inflow, 0);
+        const totalOutflow = cashflow.reduce((s, c) => s + c.outflow, 0);
+        const surplus = totalInflow - totalOutflow;
+        const avgMonthlyInflow = totalInflow / cashflow.length || 1;
+        const avgMonthlyOutflow = totalOutflow / cashflow.length || 1;
+        const liquidityRatio = avgMonthlyOutflow > 0 ? avgMonthlyInflow / avgMonthlyOutflow : 0;
+
+        // Risk flags
+        const negativeMonths = cashflow.filter(c => c.inflow < c.outflow).length;
+        const riskFlags = [];
+        if (negativeMonths >= 2) riskFlags.push({ level: 'warning', message: `${negativeMonths} months had negative cash flow` });
+        if (liquidityRatio < 1.2) riskFlags.push({ level: 'warning', message: 'Liquidity ratio is below healthy threshold (1.2x)' });
+        if (surplus < 0) riskFlags.push({ level: 'danger', message: 'Net 6-month cash flow is negative' });
+        if (riskFlags.length === 0) riskFlags.push({ level: 'good', message: 'Cash flow is healthy' });
+
+        // Treasury recommendations based on surplus
+        const recommendations = [];
+        if (surplus > 100000) {
+            recommendations.push({ product: '7-Day FD', amount: surplus * 0.4, reason: 'Park short-term surplus safely' });
+            recommendations.push({ product: 'Liquid Mutual Fund', amount: surplus * 0.3, reason: 'High liquidity with better returns' });
+            recommendations.push({ product: 'T-Bills', amount: surplus * 0.2, reason: 'Government-backed, low risk' });
+        } else if (surplus > 0) {
+            recommendations.push({ product: 'Sweep-in FD', amount: surplus, reason: 'Auto-liquidate when needed' });
+        } else {
+            recommendations.push({ product: 'Working Capital Loan', amount: Math.abs(surplus), reason: 'Bridge temporary shortfall' });
+        }
+
+        res.json({
+            success: true,
+            data: {
+                cashflow,
+                totalInflow,
+                totalOutflow,
+                surplus,
+                avgMonthlyInflow,
+                avgMonthlyOutflow,
+                liquidityRatio: Number(liquidityRatio.toFixed(2)),
+                negativeMonths,
+                riskFlags,
+                recommendations
+            }
+        });
+    } catch (err) {
+        console.error('Business cashflow error:', err);
+        res.status(500).json({ success: false, error: err.message });
+    }
+});
