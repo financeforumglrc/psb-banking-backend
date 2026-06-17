@@ -72,6 +72,7 @@ async function sendOtpEmail(recipient, otp, purpose) {
 
     if (sgMail && process.env.SENDGRID_API_KEY) {
         try {
+            console.log(`Sending OTP via SendGrid from ${FROM_NAME} <${FROM_EMAIL}> to ${recipient}`);
             await sgMail.send({
                 to: recipient,
                 from: { email: FROM_EMAIL, name: FROM_NAME },
