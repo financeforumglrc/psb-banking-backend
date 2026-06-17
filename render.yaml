@@ -1,6 +1,6 @@
 services:
   - type: web
-    name: psb-banking-backend
+    name: psb-securewealth-backend
     runtime: node
     plan: free
     buildCommand: npm install
@@ -10,6 +10,8 @@ services:
         value: production
       - key: PORT
         value: 10000
+      - key: TRUST_PROXY
+        value: "1"
       - key: JWT_SECRET
         value: 106472ec4a66767a6690423351bcc087c944a671828caa3b4ee27a6bbf9ac10c5d55342122349c674411951a3879f2ba
       - key: ADMIN_ID
@@ -20,9 +22,13 @@ services:
         value: cd48f7cf9b62f765a187def78daac0b4695aec55c896069efd92c3daa9a257d0
       - key: GEMINI_API_KEY
         value: 
-      - key: DATABASE_PATH
-        value: /data/ds_financial.db
-    disk:
-      name: sqlite-data
-      mountPath: /data
-      sizeGB: 1
+      - key: SENDGRID_API_KEY
+        value: 
+      - key: SENDGRID_FROM_EMAIL
+        value: noreply@dsfinancial.in
+      - key: SENDGRID_FROM_NAME
+        value: PSB SecureWealth
+      # Set this in the Render dashboard from the PostgreSQL service.
+      # Leave it empty here to avoid committing a secret connection string.
+      - key: DATABASE_URL
+        value: 

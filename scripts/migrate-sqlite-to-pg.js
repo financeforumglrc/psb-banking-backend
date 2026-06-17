@@ -71,7 +71,6 @@ async function migrate() {
             const colList = columns.map(c => `"${c}"`).join(',');
             const placeholders = columns.map((_, i) => `$${i + 1}`).join(',');
             const insertSql = `INSERT INTO ${table} (${colList}) VALUES (${placeholders})`;
-            const insert = await pg.prepare(insertSql);
 
             for (const row of rows) {
                 const values = columns.map(c => row[c] ?? null);

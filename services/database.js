@@ -1,11 +1,18 @@
 /**
  * SQLite Database Service
  * Provides persistent storage for DS Financial API
+ *
+ * When DATABASE_URL is set (e.g. Render PostgreSQL), the service uses a
+ * Postgres-backed persistence adapter: it hydrates SQLite from Postgres on
+ * startup, records every local mutation in a sync queue, and flushes that
+ * queue to Postgres in the background. This preserves the existing
+ * synchronous better-sqlite3 API used throughout the codebase.
  */
 
 const sqlite3 = require('better-sqlite3');
 const path = require('path');
 const fs = require('fs');
+const pgAdapter = require('./pgAdapter');
 
 const dbPath = process.env.DATABASE_PATH || path.join(__dirname, '..', 'data', 'ds_financial.db');
 const dbDir = path.dirname(dbPath);
@@ -18,6 +25,8 @@ const db = new sqlite3(dbPath);
 
 db.pragma('journal_mode = WAL');
 db.pragma('foreign_keys = ON');
+
+let readyPromise = Promise.resolve();
 
 function initializeDatabase() {
     db.exec(`
@@ -393,6 +402,22 @@ function initializeDatabase() {
     }
 
     console.log('SQLite database initialized');
+
+    if (pgAdapter.isEnabled()) {
+        readyPromise = (async () => {
+            try {
+                console.log('DATABASE_URL detected; enabling PostgreSQL persistence adapter.');
+                await pgAdapter.ensureSchema();
+                await pgAdapter.loadFromPostgres(db);
+                pgAdapter.installTriggers(db);
+                pgAdapter.startAutoFlush(db);
+                console.log('PostgreSQL persistence adapter ready.');
+            } catch (err) {
+                console.error('Failed to initialize PostgreSQL persistence adapter:', err.message);
+                throw err;
+            }
+        })();
+    }
 }
 
 const userDb = {
@@ -867,5 +892,7 @@ module.exports = {
     modelDb,
     bankingDb,
     deviceFingerprintDb,
-    otpDb
+    otpDb,
+    ready: readyPromise,
+    pgAdapter
 };

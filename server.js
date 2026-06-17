@@ -304,13 +304,38 @@ app.use((req, res) => {
 // Global error handler
 app.use(errorHandler);
 
+const database = require('./services/database');
+
 // Start server only when run directly (not when imported by tests)
 if (require.main === module) {
-    app.listen(PORT, () => {
-        logger.info(`DS Financial API Server running on port ${PORT}`);
-        logger.info(`Environment: ${process.env.NODE_ENV}`);
-        logger.info(`Patent Portfolio: 47 innovations ready`);
-    });
+    database.ready
+        .then(() => {
+            const server = app.listen(PORT, () => {
+                logger.info(`DS Financial API Server running on port ${PORT}`);
+                logger.info(`Environment: ${process.env.NODE_ENV}`);
+                logger.info(`Patent Portfolio: 47 innovations ready`);
+            });
+
+            const gracefulShutdown = async (signal) => {
+                logger.info(`Received ${signal}, flushing Postgres sync queue...`);
+                try {
+                    await database.pgAdapter.flushAndShutdown(database.db);
+                } catch (err) {
+                    logger.error('Error during shutdown flush:', err.message);
+                }
+                server.close(() => {
+                    logger.info('Server closed.');
+                    process.exit(0);
+                });
+            };
+
+            process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+            process.on('SIGINT', () => gracefulShutdown('SIGINT'));
+        })
+        .catch((err) => {
+            logger.error('Database adapter failed to initialize:', err.message);
+            process.exit(1);
+        });
 }
 
 module.exports = app;
