@@ -24,7 +24,7 @@ try {
 const OTP_LENGTH = 6;
 const OTP_TTL_MINUTES = 5;
 const MAX_ATTEMPTS = 5;
-const FROM_EMAIL = process.env.SENDGRID_FROM_EMAIL || 'noreply@dsfinancial.in';
+const FROM_EMAIL = process.env.SENDGRID_FROM_EMAIL || 'sdeepu70gg@gmail.com';
 const FROM_NAME = process.env.SENDGRID_FROM_NAME || 'PSB SecureWealth';
 
 const otpLimiter = rateLimit({
