@@ -405,16 +405,25 @@ function initializeDatabase() {
 
     if (pgAdapter.isEnabled()) {
         readyPromise = (async () => {
-            try {
-                console.log('DATABASE_URL detected; enabling PostgreSQL persistence adapter.');
-                await pgAdapter.ensureSchema();
-                await pgAdapter.loadFromPostgres(db);
-                pgAdapter.installTriggers(db);
-                pgAdapter.startAutoFlush(db);
-                console.log('PostgreSQL persistence adapter ready.');
-            } catch (err) {
-                console.error('Failed to initialize PostgreSQL persistence adapter:', err.message);
-                throw err;
+            const maxRetries = 5;
+            const delayMs = 3000;
+            for (let attempt = 1; attempt <= maxRetries; attempt++) {
+                try {
+                    console.log(`DATABASE_URL detected; enabling PostgreSQL persistence adapter (attempt ${attempt}/${maxRetries})...`);
+                    await pgAdapter.ensureSchema();
+                    await pgAdapter.loadFromPostgres(db);
+                    pgAdapter.installTriggers(db);
+                    pgAdapter.startAutoFlush(db);
+                    console.log('PostgreSQL persistence adapter ready.');
+                    return;
+                } catch (err) {
+                    console.error(`PostgreSQL persistence adapter attempt ${attempt} failed:`, err.message);
+                    if (attempt === maxRetries) {
+                        console.error('Falling back to SQLite-only mode. Data will NOT persist across redeploys.');
+                        return;
+                    }
+                    await new Promise((r) => setTimeout(r, delayMs));
+                }
             }
         })();
     }
