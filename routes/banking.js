@@ -8,6 +8,7 @@ const express = require('express');
 const router = express.Router();
 const { bankingDb, db, userDb } = require('../services/database');
 const { authMiddleware, requireRole } = require('../middleware/auth');
+const paymentService = require('../services/paymentService');
 
 // ========== VALIDATION HELPERS ==========
 function validateRequired(body, fields) {
@@ -681,6 +682,90 @@ router.delete('/recurring/:id', authMiddleware, (req, res) => {
         bankingDb.deleteRecurring(req.params.id);
         res.json({ success: true, message: 'Recurring payment cancelled' });
     } catch (err) {
+        res.status(500).json({ success: false, error: err.message });
+    }
+});
+
+// ========== RAZORPAY PAYMENTS (Test Mode) ==========
+router.get('/payments/config', authMiddleware, (req, res) => {
+    try {
+        res.json({
+            success: true,
+            data: {
+                keyId: process.env.RAZORPAY_KEY_ID || null,
+                enabled: paymentService.isConfigured()
+            }
+        });
+    } catch (err) {
+        res.status(500).json({ success: false, error: err.message });
+    }
+});
+
+router.post('/payments/create-order', authMiddleware, async (req, res) => {
+    try {
+        const { amount, currency, receipt, notes } = req.body;
+        const amountCheck = validatePositiveNumber(amount, 'Amount');
+        if (!amountCheck.valid) return res.status(400).json({ success: false, error: amountCheck.error });
+
+        const order = await paymentService.createPaymentOrder({
+            amount: amountCheck.value,
+            currency: currency || 'INR',
+            receipt: receipt || `rcpt_${req.user.id}_${Date.now()}`,
+            notes: {
+                ...(notes || {}),
+                userId: req.user.id
+            }
+        });
+
+        res.json({ success: true, data: order });
+    } catch (err) {
+        res.status(500).json({ success: false, error: err.message });
+    }
+});
+
+router.post('/payments/verify', authMiddleware, async (req, res) => {
+    try {
+        const { razorpayPaymentId, razorpayOrderId, razorpaySignature, amount, description, payee } = req.body;
+        if (!razorpayOrderId || !razorpayPaymentId) {
+            return res.status(400).json({ success: false, error: 'razorpayOrderId and razorpayPaymentId are required' });
+        }
+
+        const isValid = await paymentService.verifyPayment(razorpayPaymentId, razorpayOrderId, razorpaySignature || '');
+        if (!isValid) {
+            return res.status(400).json({ success: false, error: 'Invalid payment signature' });
+        }
+
+        // Record the successful payment as a bank transaction (fallback mode also records)
+        const amountCheck = validatePositiveNumber(amount, 'Amount');
+        if (!amountCheck.valid) return res.status(400).json({ success: false, error: amountCheck.error });
+
+        const accounts = bankingDb.getAccountsByUser(req.user.id);
+        const primary = accounts.find(a => a.status === 'active') || accounts[0];
+        if (!primary) return res.status(400).json({ success: false, error: 'No active account found' });
+
+        const result = bankingDb.executeTransfer({
+            fromAccountId: primary.id,
+            toAccountId: null,
+            amount: amountCheck.value,
+            userId: req.user.id,
+            type: 'upi',
+            description: description || `UPI Payment — ${payee || 'Merchant'}`
+        });
+
+        res.json({
+            success: true,
+            data: {
+                verified: true,
+                transactionId: result.transactionId,
+                referenceId: result.referenceId,
+                razorpayPaymentId,
+                razorpayOrderId
+            }
+        });
+    } catch (err) {
+        if (err.message === 'Insufficient balance') {
+            return res.status(400).json({ success: false, error: 'Insufficient balance' });
+        }
         res.status(500).json({ success: false, error: err.message });
     }
 });

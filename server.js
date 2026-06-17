@@ -34,6 +34,7 @@ const screenerRoutes  = require('./routes/screener');
 const bankingRoutes = require('./routes/banking');
 const kycRoutes = require('./routes/kyc');
 const protectionRoutes = require('./routes/protection');
+const otpRoutes = require('./routes/otp');
 
 // Import middleware
 const { errorHandler } = require('./middleware/errorHandler');
@@ -69,7 +70,7 @@ app.use(helmet({
         directives: {
             defaultSrc: ["'self'"],
             styleSrc: ["'self'", "'unsafe-inline'", "https://cdnjs.cloudflare.com", "https://fonts.googleapis.com"],
-            scriptSrc: ["'self'"],
+            scriptSrc: ["'self'", "https://checkout.razorpay.com"],
             fontSrc: ["'self'", "https://fonts.gstatic.com", "https://cdnjs.cloudflare.com"],
             imgSrc: ["'self'", "data:", "https:"],
             connectSrc: ["'self'", "https://api.gst.gov.in", "https://openrouter.ai", "https://api.groq.com", "https://api-inference.huggingface.co", "https://api.anthropic.com", "https://generativelanguage.googleapis.com", "https://api.openai.com"]
@@ -281,6 +282,9 @@ app.get('/api/v1/patents', (req, res) => {
 
 // SecureWealth Twin protection API (mirrors the FastAPI microservice)
 app.use('/', protectionRoutes);
+
+// OTP API (email-based one-time passwords)
+app.use('/api/v1/otp', otpRoutes);
 
 // Static file serving - ONLY serve from public directory, never parent dirs
 app.use(express.static(path.join(__dirname, '..', 'public'), {
