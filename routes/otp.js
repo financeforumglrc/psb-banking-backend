@@ -71,14 +71,22 @@ async function sendOtpEmail(recipient, otp, purpose) {
     `;
 
     if (sgMail && process.env.SENDGRID_API_KEY) {
-        await sgMail.send({
-            to: recipient,
-            from: { email: FROM_EMAIL, name: FROM_NAME },
-            subject,
-            text,
-            html
-        });
-        return { sent: true, provider: 'sendgrid' };
+        try {
+            await sgMail.send({
+                to: recipient,
+                from: { email: FROM_EMAIL, name: FROM_NAME },
+                subject,
+                text,
+                html
+            });
+            return { sent: true, provider: 'sendgrid' };
+        } catch (err) {
+            console.error('SendGrid send failed:', err.message);
+            if (err.response && err.response.body) {
+                console.error('SendGrid error body:', JSON.stringify(err.response.body));
+            }
+            throw new Error(`SendGrid failed: ${err.message}`);
+        }
     }
 
     // Dev fallback: never expose the OTP through the API, but log it locally.
