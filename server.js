@@ -33,6 +33,7 @@ const nlpQueryRoutes = require('./routes/nlp-query');
 const screenerRoutes  = require('./routes/screener');
 const bankingRoutes = require('./routes/banking');
 const kycRoutes = require('./routes/kyc');
+const aaRoutes = require('./routes/aa');
 const protectionRoutes = require('./routes/protection');
 const otpRoutes = require('./routes/otp');
 
@@ -123,6 +124,9 @@ const aiLimiter = rateLimit({
         error: 'AI request limit exceeded. Please try again in a minute.'
     }
 });
+
+// Raw body parser for Razorpay webhook signature verification (must be before express.json)
+app.use('/api/v1/banking/payments/webhook', express.raw({ type: 'application/json' }));
 
 // Body parsing
 app.use(express.json({ limit: '10mb' }));

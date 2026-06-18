@@ -45,4 +45,16 @@ router.post('/submit', authMiddleware, (req, res) => {
     }
 });
 
+router.post('/verify', authMiddleware, (req, res) => {
+    try {
+        const { reference } = req.body;
+        bankingDb.markKycVerified(req.user.id, reference);
+        const kyc = bankingDb.getKycByUser(req.user.id);
+        res.json({ success: true, message: 'KYC verified', data: kyc });
+    } catch (err) {
+        console.error('KYC verify error:', err);
+        res.status(500).json(genericError());
+    }
+});
+
 module.exports = router;

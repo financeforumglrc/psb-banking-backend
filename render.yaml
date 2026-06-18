@@ -28,6 +28,25 @@ services:
         value: sdeepu70gg@gmail.com
       - key: SENDGRID_FROM_NAME
         value: PSB SecureWealth
+      # Redis caching (Upstash free tier recommended). Leave empty to use in-memory fallback.
+      - key: REDIS_URL
+        value: 
+      # Razorpay test-mode payment keys. Set in Render dashboard; leave empty for simulation mode.
+      - key: RAZORPAY_KEY_ID
+        value: 
+      - key: RAZORPAY_KEY_SECRET
+        value: 
+      - key: RAZORPAY_WEBHOOK_SECRET
+        value: 
+      # Optional Razorpay subscription plan IDs.
+      - key: RAZORPAY_PLAN_FREE
+        value: 
+      - key: RAZORPAY_PLAN_BASIC
+        value: 
+      - key: RAZORPAY_PLAN_PREMIUM
+        value: 
+      - key: RAZORPAY_PLAN_ENTERPRISE
+        value: 
       # Set this in the Render dashboard from the PostgreSQL service.
       # Leave it empty here to avoid committing a secret connection string.
       - key: DATABASE_URL

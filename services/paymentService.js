@@ -163,6 +163,25 @@ class PaymentService {
             priceDisplay: `₹${(plan.price / 100).toLocaleString('en-IN')}`
         }));
     }
+
+    /**
+     * Verify Razorpay webhook signature.
+     * Returns true when in fallback/simulation mode (no webhook secret configured).
+     */
+    verifyWebhookSignature(body, signature) {
+        if (!process.env.RAZORPAY_WEBHOOK_SECRET) {
+            return true;
+        }
+        if (!signature) return false;
+        const expectedSignature = crypto
+            .createHmac('sha256', process.env.RAZORPAY_WEBHOOK_SECRET)
+            .update(body)
+            .digest('hex');
+        const expectedBuf = Buffer.from(expectedSignature, 'hex');
+        const signatureBuf = Buffer.from(signature, 'hex');
+        if (expectedBuf.length !== signatureBuf.length) return false;
+        return crypto.timingSafeEqual(expectedBuf, signatureBuf);
+    }
 }
 
 module.exports = new PaymentService();

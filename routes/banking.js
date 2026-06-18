@@ -9,12 +9,19 @@ const router = express.Router();
 const { bankingDb, db, userDb } = require('../services/database');
 const { authMiddleware, requireRole } = require('../middleware/auth');
 const paymentService = require('../services/paymentService');
+const cacheService = require('../services/cacheService');
 
 // ========== VALIDATION HELPERS ==========
 function validateRequired(body, fields) {
     const missing = fields.filter(f => body[f] === undefined || body[f] === null || body[f] === '');
     if (missing.length > 0) return { valid: false, error: `Missing required fields: ${missing.join(', ')}` };
     return { valid: true };
+}
+
+function invalidateBankingCache(userId) {
+    cacheService.delete(cacheService.getBusinessCashflowKey(userId));
+    cacheService.delete(cacheService.getBankingAccountsKey(userId));
+    cacheService.delete(cacheService.getBankingTransactionsKey(userId));
 }
 
 function validatePositiveNumber(value, name) {
@@ -25,9 +32,15 @@ function validatePositiveNumber(value, name) {
 }
 
 // ========== ACCOUNTS ==========
-router.get('/accounts', authMiddleware, (req, res) => {
+router.get('/accounts', authMiddleware, async (req, res) => {
     try {
+        const cacheKey = cacheService.getBankingAccountsKey(req.user.id);
+        const cached = await cacheService.get(cacheKey);
+        if (cached) {
+            return res.json({ success: true, data: cached, cached: true });
+        }
         const accounts = bankingDb.getAccountsByUser(req.user.id);
+        await cacheService.set(cacheKey, accounts, cacheService.TTL.BANKING_ACCOUNTS);
         res.json({ success: true, data: accounts });
     } catch (err) {
         res.status(500).json({ success: false, error: err.message });
@@ -50,6 +63,7 @@ router.post('/accounts', authMiddleware, (req, res) => {
             branch: branch || 'Main Branch',
             status: 'active'
         });
+        invalidateBankingCache(req.user.id);
         res.json({ success: true, data: { id: result.lastInsertRowid, accountNumber: accNum } });
     } catch (err) {
         res.status(500).json({ success: false, error: err.message });
@@ -164,6 +178,7 @@ router.post('/transactions', authMiddleware, (req, res) => {
                 description: description || `${type.toUpperCase()} Transaction`
             });
 
+            invalidateBankingCache(req.user.id);
             return res.json({ success: true, data: { id: result.transactionId, referenceId: result.referenceId } });
         }
 
@@ -182,6 +197,7 @@ router.post('/transactions', authMiddleware, (req, res) => {
                 description: description || 'Credit Transaction'
             });
 
+            invalidateBankingCache(req.user.id);
             return res.json({ success: true, data: { id: result.transactionId, referenceId: result.referenceId } });
         }
     } catch (err) {
@@ -770,6 +786,66 @@ router.post('/payments/verify', authMiddleware, async (req, res) => {
     }
 });
 
+// ========== RAZORPAY PLANS & SUBSCRIPTIONS ==========
+router.get('/payments/plans', (req, res) => {
+    try {
+        res.json({ success: true, data: paymentService.getPlans() });
+    } catch (err) {
+        res.status(500).json({ success: false, error: err.message });
+    }
+});
+
+router.post('/payments/subscription', authMiddleware, async (req, res) => {
+    try {
+        const { planId } = req.body;
+        if (!planId || !paymentService.plans[planId]) {
+            return res.status(400).json({ success: false, error: 'Valid planId is required' });
+        }
+        const subscription = await paymentService.createSubscription(planId, req.user.id);
+        res.json({ success: true, data: subscription });
+    } catch (err) {
+        res.status(500).json({ success: false, error: err.message });
+    }
+});
+
+// ========== RAZORPAY WEBHOOK ==========
+// NOTE: This route expects the raw request body. server.js mounts an
+// express.raw() parser for /api/v1/banking/payments/webhook *before* the
+// global express.json() middleware so signature verification works.
+router.post('/payments/webhook', async (req, res) => {
+    try {
+        const signature = req.headers['x-razorpay-signature'];
+        const body = Buffer.isBuffer(req.body) ? req.body.toString() : JSON.stringify(req.body);
+        const isValid = paymentService.verifyWebhookSignature(body, signature);
+        if (!isValid) {
+            return res.status(400).json({ success: false, error: 'Invalid webhook signature' });
+        }
+
+        const event = Buffer.isBuffer(req.body) ? JSON.parse(req.body.toString()) : req.body;
+        console.log('Razorpay webhook received:', event.event, event.payload?.payment?.entity?.id);
+
+        // Persist a generic webhook event log. In production, drive state machines
+        // here (mark orders paid, activate subscriptions, send emails, etc.).
+        if (bankingDb.createAuditLog) {
+            bankingDb.createAuditLog({
+                userId: event.payload?.payment?.entity?.notes?.userId || null,
+                action: 'WEBHOOK',
+                entityType: 'payment',
+                entityId: event.payload?.payment?.entity?.id || null,
+                oldValue: null,
+                newValue: JSON.stringify({ event: event.event, status: event.payload?.payment?.entity?.status }),
+                ipAddress: req.ip,
+                userAgent: req.headers['user-agent'] || ''
+            });
+        }
+
+        res.json({ success: true, received: true });
+    } catch (err) {
+        console.error('Razorpay webhook error:', err.message);
+        res.status(500).json({ success: false, error: err.message });
+    }
+});
+
 // ========== AUDIT LOGS ==========
 router.get('/audit', authMiddleware, (req, res) => {
     try {
@@ -1130,11 +1206,15 @@ router.post('/seed', authMiddleware, requireRole('admin'), (req, res) => {
     }
 });
 
-module.exports = router;
-
 // ========== BUSINESS / SME CASH FLOW ANALYZER ==========
-router.get('/business/cashflow', authMiddleware, (req, res) => {
+router.get('/business/cashflow', authMiddleware, async (req, res) => {
     try {
+        const cacheKey = cacheService.getBusinessCashflowKey(req.user.id);
+        const cached = await cacheService.get(cacheKey);
+        if (cached) {
+            return res.json({ success: true, data: cached, cached: true });
+        }
+
         const transactions = bankingDb.getTransactionsByUser(req.user.id, 1000);
 
         // Aggregate by YYYY-MM
@@ -1188,23 +1268,25 @@ router.get('/business/cashflow', authMiddleware, (req, res) => {
             recommendations.push({ product: 'Working Capital Loan', amount: Math.abs(surplus), reason: 'Bridge temporary shortfall' });
         }
 
-        res.json({
-            success: true,
-            data: {
-                cashflow,
-                totalInflow,
-                totalOutflow,
-                surplus,
-                avgMonthlyInflow,
-                avgMonthlyOutflow,
-                liquidityRatio: Number(liquidityRatio.toFixed(2)),
-                negativeMonths,
-                riskFlags,
-                recommendations
-            }
-        });
+        const result = {
+            cashflow,
+            totalInflow,
+            totalOutflow,
+            surplus,
+            avgMonthlyInflow,
+            avgMonthlyOutflow,
+            liquidityRatio: Number(liquidityRatio.toFixed(2)),
+            negativeMonths,
+            riskFlags,
+            recommendations
+        };
+
+        await cacheService.set(cacheKey, result, cacheService.TTL.BUSINESS_CASHFLOW);
+        res.json({ success: true, data: result });
     } catch (err) {
         console.error('Business cashflow error:', err);
         res.status(500).json({ success: false, error: err.message });
     }
 });
+
+module.exports = router;

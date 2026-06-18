@@ -13,18 +13,7 @@
  */
 
 const axios = require('axios');
-
-// ── In-memory cache ───────────────────────────────────────────────────────────
-const cache      = new Map();
-const CACHE_TTL  = 15 * 60 * 1000; // 15 minutes
-
-function fromCache(key) {
-    const e = cache.get(key);
-    if (!e) return null;
-    if (Date.now() - e.ts > CACHE_TTL) { cache.delete(key); return null; }
-    return e.data;
-}
-function toCache(key, data) { cache.set(key, { data, ts: Date.now() }); }
+const cacheService = require('./cacheService');
 
 // ── HTTP client ───────────────────────────────────────────────────────────────
 const http = axios.create({
@@ -159,8 +148,8 @@ const yoy = arr => {
 // ── Main scraper ──────────────────────────────────────────────────────────────
 async function scrapeCompany(ticker) {
     const clean = ticker.replace(/\.NS$/i, '').replace(/\.BO$/i, '').toUpperCase();
-    const cKey  = `company:${clean}`;
-    const hit   = fromCache(cKey);
+    const cKey  = cacheService.getScreenerCompanyKey(clean);
+    const hit   = await cacheService.get(cKey);
     if (hit) return { ...hit, cached: true };
 
     const url = `https://www.screener.in/company/${clean}/`;
@@ -271,14 +260,14 @@ async function scrapeCompany(ticker) {
         fetchedAt: new Date().toISOString()
     };
 
-    toCache(cKey, result);
+    await cacheService.set(cKey, result, cacheService.TTL.SCREENER_COMPANY);
     return result;
 }
 
 // ── Screener.in autocomplete API ──────────────────────────────────────────────
 async function searchCompanies(query) {
-    const cKey = `search:${query.toLowerCase().trim()}`;
-    const hit  = fromCache(cKey);
+    const cKey = `screener:search:${query.toLowerCase().trim()}`;
+    const hit  = await cacheService.get(cKey);
     if (hit) return { ...hit, cached: true };
 
     try {
@@ -292,7 +281,7 @@ async function searchCompanies(query) {
             url:    x.url    || ''
         }));
         const out = { query, results };
-        toCache(cKey, out);
+        await cacheService.set(cKey, out, cacheService.TTL.SCREENER_COMPANY);
         return out;
     } catch (err) {
         throw new Error(`Screener.in search failed: ${err.message}`);

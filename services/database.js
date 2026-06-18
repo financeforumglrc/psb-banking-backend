@@ -268,6 +268,19 @@ function initializeDatabase() {
             FOREIGN KEY (user_id) REFERENCES users(id)
         );
 
+        CREATE TABLE IF NOT EXISTS aa_consents (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id TEXT NOT NULL,
+            bank_name TEXT NOT NULL,
+            account_mask TEXT,
+            consent_id TEXT UNIQUE,
+            status TEXT DEFAULT 'active',
+            scopes TEXT,
+            linked_at TEXT DEFAULT (datetime('now')),
+            created_at TEXT DEFAULT (datetime('now')),
+            FOREIGN KEY (user_id) REFERENCES users(id)
+        );
+
         CREATE TABLE IF NOT EXISTS goals (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             user_id TEXT NOT NULL,
@@ -812,6 +825,23 @@ const bankingDb = {
         }
         const stmt = db.prepare(`INSERT INTO kyc_records (user_id, pan_number, aadhaar_masked, kyc_status) VALUES (?, ?, ?, ?)`);
         return stmt.run(data.userId, data.panNumber || null, data.aadhaarMasked || null, data.kycStatus || 'pending');
+    },
+    markKycVerified: (userId, reference) => {
+        const stmt = db.prepare(`UPDATE kyc_records SET kyc_status = 'verified', verified_at = datetime('now'), ekyc_reference = COALESCE(?, ekyc_reference) WHERE user_id = ?`);
+        return stmt.run(reference || null, userId);
+    },
+    getAaConsentsByUser: (userId) => {
+        return db.prepare('SELECT * FROM aa_consents WHERE user_id = ? AND status = ? ORDER BY linked_at DESC').all(userId, 'active');
+    },
+    createAaConsent: (data) => {
+        const existing = db.prepare('SELECT * FROM aa_consents WHERE user_id = ? AND bank_name = ? AND status = ?').get(data.userId, data.bankName, 'active');
+        if (existing) throw new Error('Bank already linked');
+        const stmt = db.prepare(`INSERT INTO aa_consents (user_id, bank_name, account_mask, consent_id, status, scopes) VALUES (?, ?, ?, ?, ?, ?)`);
+        return stmt.run(data.userId, data.bankName, data.accountMask || null, data.consentId || null, 'active', Array.isArray(data.scopes) ? data.scopes.join(',') : data.scopes || null);
+    },
+    revokeAaConsent: (consentId, userId) => {
+        const stmt = db.prepare(`UPDATE aa_consents SET status = 'revoked' WHERE id = ? AND user_id = ?`);
+        return stmt.run(consentId, userId);
     }
 };
 

@@ -5,6 +5,7 @@
  */
 
 const axios = require('axios');
+const cacheService = require('./cacheService');
 
 const YAHOO_FINANCE_BASE = 'https://query1.finance.yahoo.com/v8/finance/chart';
 const YAHOO_QUOTE_BASE = 'https://query1.finance.yahoo.com/v7/finance/quote';
@@ -13,6 +14,10 @@ const YAHOO_QUOTE_BASE = 'https://query1.finance.yahoo.com/v7/finance/quote';
 // REAL-TIME QUOTE
 // ============================================
 async function getQuote(ticker) {
+    const cacheKey = cacheService.getMarketQuoteKey(ticker);
+    const cached = await cacheService.get(cacheKey);
+    if (cached) return cached;
+
     try {
         const url = `${YAHOO_QUOTE_BASE}?symbols=${encodeURIComponent(ticker)}&fields=regularMarketPrice,regularMarketChange,regularMarketChangePercent,regularMarketDayHigh,regularMarketDayLow,regularMarketVolume,fiftyTwoWeekHigh,fiftyTwoWeekLow,marketCap,trailingPE,forwardPE,priceToBook,enterpriseToEbitda,dividendYield,bookValue,sharesOutstanding,shortName,longName,sector,industry`;
         
@@ -26,7 +31,7 @@ async function getQuote(ticker) {
         const result = response.data?.quoteResponse?.result?.[0];
         if (!result) return null;
         
-        return {
+        const quote = {
             ticker: result.symbol,
             name: result.shortName || result.longName,
             price: result.regularMarketPrice,
@@ -50,6 +55,8 @@ async function getQuote(ticker) {
             currency: result.currency || 'INR',
             timestamp: new Date().toISOString()
         };
+        await cacheService.set(cacheKey, quote, cacheService.TTL.MARKET_QUOTE);
+        return quote;
     } catch (error) {
         console.error(`Market data fetch failed for ${ticker}:`, error.message);
         return null;
@@ -60,6 +67,10 @@ async function getQuote(ticker) {
 // HISTORICAL PRICE DATA (for charts)
 // ============================================
 async function getHistoricalData(ticker, range = '1y', interval = '1d') {
+    const cacheKey = cacheService.getMarketHistoricalKey(ticker, range);
+    const cached = await cacheService.get(cacheKey);
+    if (cached) return cached;
+
     try {
         const url = `${YAHOO_FINANCE_BASE}/${encodeURIComponent(ticker)}?range=${range}&interval=${interval}&includeAdjustedClose=true`;
         
@@ -86,7 +97,7 @@ async function getHistoricalData(ticker, range = '1y', interval = '1d') {
             adj_close: adjcloses[i] || closes[i]
         })).filter(d => d.price !== null);
         
-        return {
+        const historicalData = {
             ticker,
             range,
             interval,
@@ -97,6 +108,8 @@ async function getHistoricalData(ticker, range = '1y', interval = '1d') {
                 instrument_type: result.meta?.instrumentType
             }
         };
+        await cacheService.set(cacheKey, historicalData, cacheService.TTL.MARKET_HISTORICAL);
+        return historicalData;
     } catch (error) {
         console.error(`Historical data fetch failed for ${ticker}:`, error.message);
         return null;
