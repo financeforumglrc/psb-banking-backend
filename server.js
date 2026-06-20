@@ -195,6 +195,21 @@ app.get('/api/v1/health', (req, res) => {
     });
 });
 
+// Temporary diagnostic endpoint (no secret values exposed)
+app.get('/api/v1/debug/aa-config', (req, res) => {
+    res.json({
+        success: true,
+        data: {
+            setuBaseUrl: process.env.SETU_AA_BASE_URL || null,
+            hasClientId: !!process.env.SETU_AA_CLIENT_ID,
+            hasClientSecret: !!process.env.SETU_AA_CLIENT_SECRET,
+            hasProductInstanceId: !!process.env.SETU_AA_PRODUCT_INSTANCE_ID,
+            redirectUrl: process.env.SETU_AA_REDIRECT_URL || null,
+            psbFipId: process.env.SETU_PSB_FIP_ID || null
+        }
+    });
+});
+
 // Auth rate limiter (stricter than general limiter)
 const authLimiter = rateLimit({
     windowMs: 15 * 60 * 1000,
