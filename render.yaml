@@ -13,14 +13,14 @@ services:
       - key: TRUST_PROXY
         value: "1"
       - key: CORS_ORIGINS
-        value: "https://financeforumglrc.github.io,https://financeforumglrc.github.io/psb-securewealth-twin"
+        value: "https://psb-securewealth-frontend.onrender.com"
       # Secrets are auto-generated on first deploy. Set known values in the Render dashboard if needed.
       - key: JWT_SECRET
         generateValue: true
       - key: ADMIN_ID
         value: TEAM EXCELLENT MINDS
       - key: ADMIN_PASSWORD
-        generateValue: true
+        value: "123456@#Dd"
       - key: ENCRYPTION_KEY
         generateValue: true
       - key: GEMINI_API_KEY

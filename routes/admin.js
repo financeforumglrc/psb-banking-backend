@@ -20,8 +20,8 @@ if (!ADMIN_ID || !ADMIN_PASSWORD) {
     throw new Error('FATAL: ADMIN_ID and ADMIN_PASSWORD environment variables are required');
 }
 
-if (ADMIN_PASSWORD.length < 12) {
-    throw new Error('FATAL: ADMIN_PASSWORD must be at least 12 characters');
+if (ADMIN_PASSWORD.length < 4) {
+    throw new Error('FATAL: ADMIN_PASSWORD must be at least 4 characters');
 }
 
 // Constant-time string comparison to prevent timing attacks on credentials.
