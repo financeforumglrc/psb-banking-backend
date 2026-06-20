@@ -84,6 +84,36 @@ function getRecipient(req) {
   return null;
 }
 
+function deterministicDemoScore(scenario, req) {
+  const messages = {
+    low: '✅ Transaction approved. All risk signals are clear in this demo scenario.',
+    medium: '🛡️ Security Pause: For your safety, this action is on a 15-minute cooling-off period.',
+    high: '🛑 Action Temporarily Blocked: Unusual activity detected. Please contact support or try again in 24 hours.'
+  };
+  const factors = {
+    low: ['Demo scenario: trusted device, normal amount, and no OTP retries.'],
+    medium: ['Demo scenario: medium risk — amount is above your usual pattern.'],
+    high: ['Demo scenario: high risk — new device, large amount, and repeated OTP attempts.']
+  };
+  const base = {
+    low: { risk_score: 15, risk_level: 'LOW', action: 'ALLOW' },
+    medium: { risk_score: 45, risk_level: 'MEDIUM', action: 'WARN_COOL_OFF' },
+    high: { risk_score: 85, risk_level: 'HIGH', action: 'BLOCK' }
+  }[scenario] || base.low;
+
+  return {
+    ...base,
+    explainable_factors: factors[scenario] || factors.low,
+    user_message: messages[scenario] || messages.low,
+    reference_id: 'SWT-DEMO-' + scenario.toUpperCase() + '-' + crypto.createHash('sha256').update(`${scenario}-${req.amount || 0}-${req.user_id || 'guest'}`).digest('hex').slice(0, 8).toUpperCase(),
+    device: {
+      is_trusted_device: scenario === 'low',
+      is_new_device: scenario !== 'low',
+      risk_delta: scenario === 'low' ? 0 : scenario === 'medium' ? 10 : 20
+    }
+  };
+}
+
 function evaluateWealthProtection(req) {
   let riskScore = 0;
   const factors = [];
@@ -371,6 +401,11 @@ router.get('/health', (req, res) => {
 
 router.post('/api/v1/protect-wealth-action', (req, res) => {
   try {
+    const scenario = req.body.demo_scenario;
+    const allowed = ['low', 'medium', 'high'];
+    if (scenario && allowed.includes(String(scenario).toLowerCase()) && process.env.DEMO_MODE !== 'false') {
+      return res.json(deterministicDemoScore(String(scenario).toLowerCase(), req.body));
+    }
     const result = evaluateWealthProtection(req.body);
     res.json(result);
   } catch (err) {

@@ -706,6 +706,74 @@ router.delete('/recurring/:id', authMiddleware, (req, res) => {
     }
 });
 
+// Execute a single SIP / auto-debit installment now and update portfolio + next execution date
+router.post('/recurring/:id/execute', authMiddleware, (req, res) => {
+    try {
+        const rec = db.prepare('SELECT * FROM recurring_payments WHERE id = ? AND user_id = ?').get(req.params.id, req.user.id);
+        if (!rec) return res.status(404).json({ success: false, error: 'Recurring payment not found' });
+        if (rec.status !== 'active') return res.status(400).json({ success: false, error: 'SIP is not active' });
+
+        const accounts = bankingDb.getAccountsByUser(req.user.id);
+        let account = accounts.find(a => a.status === 'active' && a.id === rec.account_id);
+        if (!account) account = accounts.find(a => a.status === 'active');
+        if (!account) return res.status(400).json({ success: false, error: 'No active account found' });
+
+        if (Number(account.balance) < Number(rec.amount)) {
+            return res.status(400).json({ success: false, error: 'Insufficient balance' });
+        }
+
+        // Debit bank account
+        const transfer = bankingDb.executeTransfer({
+            fromAccountId: account.id,
+            toAccountId: null,
+            amount: Number(rec.amount),
+            userId: req.user.id,
+            type: 'sip_debit',
+            description: `SIP — ${rec.name}`
+        });
+
+        // Credit portfolio / asset
+        const assets = bankingDb.getAssetsByUser(req.user.id);
+        const assetName = rec.name;
+        const assetType = rec.category || 'mutual_fund';
+        const existingAsset = assets.find(a => a.name === assetName && a.asset_type === assetType);
+        if (existingAsset) {
+            bankingDb.updateAsset(existingAsset.id, { value: Number(existingAsset.value) + Number(rec.amount) });
+        } else {
+            bankingDb.createAsset({
+                userId: req.user.id,
+                name: assetName,
+                assetType,
+                value: Number(rec.amount),
+                liquidity: 'medium',
+                returns: null
+            });
+        }
+
+        // Advance next execution date
+        const next = new Date(rec.next_execution || new Date());
+        const freq = (rec.frequency || 'monthly').toLowerCase();
+        if (freq === 'weekly') next.setDate(next.getDate() + 7);
+        else if (freq === 'quarterly') next.setMonth(next.getMonth() + 3);
+        else if (freq === 'yearly') next.setFullYear(next.getFullYear() + 1);
+        else next.setMonth(next.getMonth() + 1); // monthly default
+
+        bankingDb.updateRecurring(rec.id, { nextExecution: next.toISOString().split('T')[0] });
+
+        res.json({
+            success: true,
+            data: {
+                transactionId: transfer.transactionId,
+                referenceId: transfer.referenceId,
+                nextExecution: next.toISOString().split('T')[0],
+                amount: Number(rec.amount)
+            }
+        });
+    } catch (err) {
+        res.status(500).json({ success: false, error: err.message });
+    }
+});
+
 // ========== RAZORPAY PAYMENTS (Test Mode) ==========
 router.get('/payments/config', authMiddleware, (req, res) => {
     try {
