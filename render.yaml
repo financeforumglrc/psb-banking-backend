@@ -12,6 +12,8 @@ services:
         value: 10000
       - key: TRUST_PROXY
         value: "1"
+      - key: CORS_ORIGINS
+        value: "https://financeforumglrc.github.io,https://financeforumglrc.github.io/psb-securewealth-twin"
       # Secrets are auto-generated on first deploy. Set known values in the Render dashboard if needed.
       - key: JWT_SECRET
         generateValue: true
@@ -52,3 +54,20 @@ services:
       # Leave it empty here to avoid committing a secret connection string.
       - key: DATABASE_URL
         value: 
+      # SQLite path (default). Use a Render Disk or PostgreSQL for persistence.
+      - key: DB_PATH
+        value: ./data/financial.db
+      # --- SETU Account Aggregator sandbox ---
+      - key: SETU_AA_BASE_URL
+        value: https://fiu-sandbox.setu.co
+      - key: SETU_AA_CLIENT_ID
+        value: 
+      - key: SETU_AA_CLIENT_SECRET
+        value: 
+      - key: SETU_AA_PRODUCT_INSTANCE_ID
+        value: 
+      - key: SETU_AA_REDIRECT_URL
+        value: https://financeforumglrc.github.io/psb-securewealth-twin/aa/callback
+      - key: SETU_PSB_FIP_ID
+        value: PSB-FIP-001
+    healthCheckPath: /api/v1/health
