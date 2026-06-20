@@ -68,7 +68,9 @@ services:
       # - key: SETU_AA_PRODUCT_INSTANCE_ID
       #   value: 
       # - key: SETU_AA_REDIRECT_URL
-      #   value: https://financeforumglrc.github.io/psb-securewealth-twin/aa/callback
+      #   value: https://psb-securewealth-frontend.onrender.com/aa/callback
+      # - key: SETU_AA_TEST_PHONE
+      #   value: 9999999999
       # - key: SETU_PSB_FIP_ID
       #   value: PSB-FIP-001
     healthCheckPath: /api/v1/health

@@ -1,46 +1,88 @@
 /**
  * SETU Account Aggregator (AA) Sandbox Adapter
  *
- * Bridges the internal PSB SecureWealth Twin consent flow with SETU's FIU APIs.
- * When SETU credentials are present in env, real sandbox calls are made.
- * When credentials are missing, the adapter returns a clear error so the
- * caller can fall back to the deterministic PSB mock flow.
+ * Bridges the internal PSB SecureWealth Twin consent flow with SETU's public
+ * FIU UAT sandbox. The public sandbox uses the shared "test-client" credentials
+ * from the official Postman collection, so the integration works without
+ * completing Setu Bridge KYC.
  *
- * SETU AA sandbox docs: https://docs.setu.co/data/account-aggregator
- * Postman collection: https://documenter.getpostman.com/view/16080598/TzzBoun5
+ * If you later obtain organisation-specific FIU credentials, set
+ * SETU_AA_FORCE_OWN_CREDENTIALS=true and provide SETU_AA_CLIENT_ID,
+ * SETU_AA_CLIENT_SECRET and SETU_AA_PRODUCT_INSTANCE_ID.
+ *
+ * Official collection: https://documenter.getpostman.com/view/15462260/UVCBBQLW
+ * Setu AA docs: https://docs.setu.co/data/account-aggregator
  */
 
 const axios = require('axios');
 
-const BASE_URL = process.env.SETU_AA_BASE_URL || 'https://fiu-sandbox.setu.co';
-const CLIENT_ID = process.env.SETU_AA_CLIENT_ID;
-const CLIENT_SECRET = process.env.SETU_AA_CLIENT_SECRET;
+const FORCE_OWN = process.env.SETU_AA_FORCE_OWN_CREDENTIALS === 'true';
+
+// Public UAT sandbox credentials from Setu's official Postman collection.
+const PUBLIC_BASE_URL = 'https://fiu-uat.setu.co';
+const PUBLIC_CLIENT_ID = 'test-client';
+const PUBLIC_CLIENT_SECRET = '3fa14d45-3adc-4522-b512-1e3f24d92568';
+
+const BASE_URL = FORCE_OWN
+    ? (process.env.SETU_AA_BASE_URL || 'https://fiu-sandbox.setu.co')
+    : PUBLIC_BASE_URL;
+const CLIENT_ID = FORCE_OWN ? process.env.SETU_AA_CLIENT_ID : PUBLIC_CLIENT_ID;
+const CLIENT_SECRET = FORCE_OWN ? process.env.SETU_AA_CLIENT_SECRET : PUBLIC_CLIENT_SECRET;
 const PRODUCT_INSTANCE_ID = process.env.SETU_AA_PRODUCT_INSTANCE_ID;
 const PSB_FIP_ID = process.env.SETU_PSB_FIP_ID || 'PSB-FIP-001';
+const DATA_CONSUMER_ID = process.env.SETU_AA_DATA_CONSUMER_ID || 'setu-fiu-id';
+const TEST_PHONE = process.env.SETU_AA_TEST_PHONE || '9999999999';
 
 function isConfigured() {
-    return !!(CLIENT_ID && CLIENT_SECRET && PRODUCT_INSTANCE_ID);
+    // The public sandbox is always configured. Own-credentials mode needs all three.
+    if (FORCE_OWN) {
+        return !!(CLIENT_ID && CLIENT_SECRET && PRODUCT_INSTANCE_ID);
+    }
+    return true;
+}
+
+function normalizeVua(vua) {
+    if (!vua) return `${TEST_PHONE}@onemoney`;
+    if (/^\d{10}@/.test(vua)) return vua;
+    const digits = vua.replace(/\D/g, '');
+    if (digits.length >= 10) {
+        return `${digits.slice(-10)}@onemoney`;
+    }
+    return `${TEST_PHONE}@onemoney`;
+}
+
+function addDuration(date, value, unit) {
+    const d = new Date(date);
+    const v = parseInt(value, 10);
+    switch (String(unit).toUpperCase()) {
+        case 'DAY': d.setDate(d.getDate() + v); break;
+        case 'MONTH': d.setMonth(d.getMonth() + v); break;
+        case 'YEAR': d.setFullYear(d.getFullYear() + v); break;
+        default: d.setMonth(d.getMonth() + v);
+    }
+    return d.toISOString();
 }
 
 // Safe startup log: only booleans, never the actual credentials.
-console.log('[SETU AA] adapter loaded — configured:', isConfigured(),
-    '| hasClientId:', !!CLIENT_ID,
-    '| hasSecret:', !!CLIENT_SECRET,
-    '| hasProductInstanceId:', !!PRODUCT_INSTANCE_ID,
+console.log('[SETU AA] adapter loaded — mode:', FORCE_OWN ? 'own-credentials' : 'public-uat',
+    '| configured:', isConfigured(),
     '| baseUrl:', BASE_URL);
 
 function headers() {
-    return {
+    const h = {
         'Content-Type': 'application/json',
         'x-client-id': CLIENT_ID,
-        'x-client-secret': CLIENT_SECRET,
-        'x-product-instance-id': PRODUCT_INSTANCE_ID
+        'x-client-secret': CLIENT_SECRET
     };
+    if (PRODUCT_INSTANCE_ID) {
+        h['x-product-instance-id'] = PRODUCT_INSTANCE_ID;
+    }
+    return h;
 }
 
 async function request(method, path, body) {
-    if (!isConfigured()) {
-        throw new Error('SETU AA credentials are not configured');
+    if (FORCE_OWN && !isConfigured()) {
+        throw new Error('SETU AA own-credentials mode is missing credentials');
     }
     const url = `${BASE_URL.replace(/\/$/, '')}${path}`;
     try {
@@ -56,7 +98,7 @@ async function request(method, path, body) {
 }
 
 /**
- * Create a consent request on SETU AA.
+ * Create a consent request on SETU AA public UAT sandbox.
  *
  * @param {Object} opts
  * @param {string} opts.vua              Virtual user address, e.g. 9999999999@onemoney
@@ -70,54 +112,96 @@ async function request(method, path, body) {
  */
 async function createConsent(opts) {
     const now = new Date();
+    const consentStart = now.toISOString();
+    const consentExpiry = addDuration(now, 3, 'MONTH');
     const dataRangeFrom = opts.dataRangeFrom || new Date(now.getFullYear() - 1, now.getMonth(), now.getDate());
     const dataRangeTo = opts.dataRangeTo || now;
 
-    // Minimal v2 consent body. Consent template details (purpose, fiTypes,
-    // frequency, dataLife, redirectUrl, etc.) are picked from the product
-    // configuration on Setu Bridge, so we do not override them here.
+    const consentTypes = (opts.consentTypes || ['TRANSACTIONS', 'PROFILE', 'SUMMARY']).map(s => String(s).toUpperCase());
+    const fiTypes = opts.fiTypes || ['DEPOSIT'];
+    const purposeText = opts.purposeText || 'Wealth intelligence and financial protection';
+    const purposeCode = opts.purposeCode || '101';
+
+    // Legacy FIU UAT body shape from the public Postman collection.
     const body = {
-        consentDuration: { unit: 'MONTH', value: '3' },
-        vua: opts.vua,
-        dataRange: {
-            from: dataRangeFrom.toISOString(),
-            to: dataRangeTo.toISOString()
+        Detail: {
+            consentStart,
+            consentExpiry,
+            Customer: {
+                id: normalizeVua(opts.vua)
+            },
+            FIDataRange: {
+                from: dataRangeFrom.toISOString(),
+                to: dataRangeTo.toISOString()
+            },
+            consentMode: 'STORE',
+            consentTypes,
+            fetchType: 'PERIODIC',
+            Frequency: {
+                value: 30,
+                unit: 'MONTH'
+            },
+            DataFilter: [],
+            DataLife: {
+                value: 1,
+                unit: 'MONTH'
+            },
+            DataConsumer: {
+                id: DATA_CONSUMER_ID
+            },
+            Purpose: {
+                Category: {
+                    type: 'string'
+                },
+                code: purposeCode,
+                text: purposeText,
+                refUri: `https://api.rebit.org.in/aa/purpose/${purposeCode}.xml`
+            },
+            fiTypes
         },
         context: [
             { key: 'fipId', value: PSB_FIP_ID }
-        ],
-        additionalParams: {
-            tags: ['PSB_SecureWealth', 'wealth_intelligence']
-        }
+        ]
     };
 
-    return request('POST', '/v2/consents', body);
+    if (opts.redirectUrl) {
+        body.redirectUrl = opts.redirectUrl;
+    }
+
+    return request('POST', '/consents', body);
 }
 
 function getConsentStatus(requestId) {
-    return request('GET', `/v2/consents/${requestId}`);
+    return request('GET', `/consents/${requestId}`);
 }
 
 function revokeConsent(requestId) {
-    return request('POST', `/v2/consents/${requestId}/revoke`, {});
-}
-
-function getDataSessions(consentRequestId) {
-    return request('GET', `/v2/consents/${consentRequestId}/data-sessions`);
-}
-
-function getFetchStatus(consentRequestId) {
-    return request('GET', `/v2/consents/${consentRequestId}/fetch/status`);
+    return request('POST', `/consents/${requestId}/revoke`, {});
 }
 
 /**
- * Fetch FI data for a session.
- * In production this returns encrypted FI data that must be decrypted via
- * Sahamati Rahasya (or Setu's managed decrypt endpoint). Here we return the
- * raw response so the caller can store it and optionally decrypt it.
+ * Create a data session for an approved consent.
+ * The public UAT API returns the session id immediately; data can then be
+ * fetched with fetchSessionData once Setu has processed it.
  */
+function createDataSession(consentId, dataRange) {
+    const body = {
+        consentId,
+        DataRange: {
+            from: dataRange?.from || new Date(Date.now() - 365 * 24 * 60 * 60 * 1000).toISOString(),
+            to: dataRange?.to || new Date().toISOString()
+        },
+        format: 'json'
+    };
+    return request('POST', '/sessions', body);
+}
+
 function fetchSessionData(sessionId) {
-    return request('GET', `/v2/sessions/${sessionId}/fetch`);
+    return request('GET', `/sessions/${sessionId}`);
+}
+
+function getFips() {
+    return request('GET', '/fips');
 }
 
 module.exports = {
@@ -127,7 +211,7 @@ module.exports = {
     createConsent,
     getConsentStatus,
     revokeConsent,
-    getDataSessions,
-    getFetchStatus,
-    fetchSessionData
+    createDataSession,
+    fetchSessionData,
+    getFips
 };

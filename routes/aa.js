@@ -121,7 +121,7 @@ function generateTransactions(accountId, balance, count = 12) {
 function normalizeStatus(setuStatus) {
     if (!setuStatus) return 'active';
     const s = String(setuStatus).toUpperCase();
-    if (s === 'ACTIVE' || s === 'APPROVED') return 'active';
+    if (s === 'ACTIVE' || s === 'APPROVED' || s === 'READY') return 'active';
     if (s === 'REVOKED' || s === 'REJECTED' || s === 'EXPIRED') return 'revoked';
     return 'pending';
 }
@@ -156,6 +156,8 @@ router.post('/consents', async (req, res) => {
         if (!bankName) {
             return res.status(400).json({ success: false, error: 'bankName is required' });
         }
+        const consentRedirectUrl = redirectUrl || process.env.SETU_AA_REDIRECT_URL || 'http://localhost:3000/aa/callback';
+        const consentPhone = phone || process.env.SETU_AA_TEST_PHONE;
         const normalized = bankName.trim().toLowerCase();
         if (!normalized.includes('punjab') && !normalized.includes('psb') && !normalized.includes('sind')) {
             return res.status(400).json({
@@ -171,10 +173,10 @@ router.post('/consents', async (req, res) => {
 
         if (setuAa.isConfigured()) {
             try {
-                const vua = phone ? `${phone}@onemoney` : `${req.user.id}@onemoney`;
+                const vua = consentPhone ? `${consentPhone}@onemoney` : `${req.user.id}@onemoney`;
                 const setuRes = await setuAa.createConsent({
                     vua,
-                    redirectUrl,
+                    redirectUrl: consentRedirectUrl,
                     fiTypes: ['DEPOSIT'],
                     consentTypes: (scopes || ['transactions', 'profile', 'summary']).map(s => String(s).toUpperCase())
                 });
@@ -305,7 +307,9 @@ router.post('/consents/:id/discover', async (req, res) => {
                 });
             }
             bankingDb.updateAaConsentSetu(consent.id, req.user.id, { setuStatus, status: 'active' });
-            setuSessions = await setuAa.getDataSessions(consent.setu_request_id).catch(() => null);
+            // The public UAT sandbox does not expose a list-data-sessions endpoint;
+            // sessions are created on demand when data is fetched.
+            setuSessions = null;
         }
 
         const existing = bankingDb.getAaAccountsByConsent(consent.id, req.user.id);
@@ -422,18 +426,23 @@ router.post('/sync', async (req, res) => {
 // We poll the consent status and then send the user to the frontend.
 router.get('/callback', async (req, res) => {
     try {
-        const { requestId, error: setuError } = req.query;
-        if (!requestId) {
-            return res.status(400).json({ success: false, error: 'Missing requestId' });
+        // Setu redirects with ?id=<consent-id>&success=<true|false>.
+        // We also accept ?requestId=<id> for backward compatibility.
+        const { requestId, id, success, errorcode, errormsg, error: setuError } = req.query;
+        const setuRequestId = requestId || id;
+        if (!setuRequestId) {
+            return res.status(400).json({ success: false, error: 'Missing requestId/id' });
         }
-        if (setuError) {
-            console.warn('SETU callback returned error:', setuError);
+        const successFlag = success === 'true';
+        const userRejected = success === 'false' || errorcode === '1' || errorcode === '5';
+        if (setuError || errormsg) {
+            console.warn('SETU callback returned error:', setuError || errormsg, 'code:', errorcode);
         }
 
-        const consent = bankingDb.getAaConsentBySetuRequestId(requestId);
-        if (setuAa.isConfigured() && !setuError) {
+        const consent = bankingDb.getAaConsentBySetuRequestId(setuRequestId);
+        if (setuAa.isConfigured() && !userRejected) {
             try {
-                const setuRes = await setuAa.getConsentStatus(requestId);
+                const setuRes = await setuAa.getConsentStatus(setuRequestId);
                 const setuStatus = setuRes.status || consent?.setu_status;
                 const localStatus = normalizeStatus(setuStatus);
                 if (consent) {
@@ -445,11 +454,18 @@ router.get('/callback', async (req, res) => {
             } catch (statusErr) {
                 console.warn('SETU callback status poll failed:', statusErr.message);
             }
+        } else if (consent && userRejected) {
+            bankingDb.updateAaConsentSetu(consent.id, consent.user_id, {
+                setuStatus: 'REJECTED',
+                status: 'revoked'
+            });
         }
 
         const redirectUrl = process.env.SETU_AA_REDIRECT_URL || 'http://localhost:3000/aa/callback';
         const separator = redirectUrl.includes('?') ? '&' : '?';
-        return res.redirect(`${redirectUrl}${separator}requestId=${encodeURIComponent(requestId)}&status=${consent ? consent.status : 'unknown'}`);
+        // Refresh consent after the DB update so the redirect carries the latest status.
+        const refreshedConsent = consent ? bankingDb.getAaConsentBySetuRequestId(setuRequestId) : null;
+        return res.redirect(`${redirectUrl}${separator}requestId=${encodeURIComponent(setuRequestId)}&status=${refreshedConsent ? refreshedConsent.status : (consent ? consent.status : 'unknown')}`);
     } catch (err) {
         console.error('AA callback error:', err);
         res.status(500).json({ success: false, error: 'Failed to process SETU callback' });
