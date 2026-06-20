@@ -22,6 +22,13 @@ function isConfigured() {
     return !!(CLIENT_ID && CLIENT_SECRET && PRODUCT_INSTANCE_ID);
 }
 
+// Safe startup log: only booleans, never the actual credentials.
+console.log('[SETU AA] adapter loaded — configured:', isConfigured(),
+    '| hasClientId:', !!CLIENT_ID,
+    '| hasSecret:', !!CLIENT_SECRET,
+    '| hasProductInstanceId:', !!PRODUCT_INSTANCE_ID,
+    '| baseUrl:', BASE_URL);
+
 function headers() {
     return {
         'Content-Type': 'application/json',
