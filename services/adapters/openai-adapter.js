@@ -5,8 +5,9 @@
 const OpenAI = require('openai');
 
 function getClient(apiKey) {
-    if (!apiKey) throw new Error('OpenAI API key required for BYOK');
-    return new OpenAI({ apiKey });
+    const key = apiKey || process.env.OPENAI_API_KEY;
+    if (!key) throw new Error('OpenAI API key required (set OPENAI_API_KEY or BYOK)');
+    return new OpenAI({ apiKey: key });
 }
 
 async function extract({ pdfBuffer, prompt, model = 'gpt-4o', apiKey }) {

@@ -6,12 +6,12 @@
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 
 function getClient(apiKey) {
-    const key = apiKey || process.env.GEMINI_API_KEY;
-    if (!key) throw new Error('GEMINI_API_KEY not configured');
+    const key = apiKey || process.env.GOOGLE_API_KEY || process.env.GEMINI_API_KEY;
+    if (!key) throw new Error('GOOGLE_API_KEY / GEMINI_API_KEY not configured');
     return new GoogleGenerativeAI(key);
 }
 
-const MOCK_MODE = process.env.AI_MOCK_MODE === 'true' || !process.env.GEMINI_API_KEY;
+const MOCK_MODE = process.env.AI_MOCK_MODE === 'true' || (!process.env.GOOGLE_API_KEY && !process.env.GEMINI_API_KEY);
 
 function mockResponse(type, input) {
     if (type === 'chat') {

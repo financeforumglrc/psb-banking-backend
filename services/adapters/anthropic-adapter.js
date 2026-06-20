@@ -5,8 +5,9 @@
 const Anthropic = require('@anthropic-ai/sdk');
 
 function getClient(apiKey) {
-    if (!apiKey) throw new Error('Anthropic API key required for BYOK');
-    return new Anthropic({ apiKey });
+    const key = apiKey || process.env.ANTHROPIC_API_KEY;
+    if (!key) throw new Error('Anthropic API key required (set ANTHROPIC_API_KEY or BYOK)');
+    return new Anthropic({ apiKey: key });
 }
 
 async function extract({ pdfBuffer, prompt, model = 'claude-sonnet-4-7', apiKey }) {
