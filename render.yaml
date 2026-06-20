@@ -12,14 +12,15 @@ services:
         value: 10000
       - key: TRUST_PROXY
         value: "1"
+      # Secrets are auto-generated on first deploy. Set known values in the Render dashboard if needed.
       - key: JWT_SECRET
-        value: 106472ec4a66767a6690423351bcc087c944a671828caa3b4ee27a6bbf9ac10c5d55342122349c674411951a3879f2ba
+        generateValue: true
       - key: ADMIN_ID
         value: TEAM EXCELLENT MINDS
       - key: ADMIN_PASSWORD
-        value: Kcwkl6OQT57VweVSeSjgA7W4
+        generateValue: true
       - key: ENCRYPTION_KEY
-        value: cd48f7cf9b62f765a187def78daac0b4695aec55c896069efd92c3daa9a257d0
+        generateValue: true
       - key: GEMINI_API_KEY
         value: 
       - key: SENDGRID_API_KEY

@@ -277,8 +277,9 @@ function initializeDatabase() {
             status TEXT DEFAULT 'active',
             scopes TEXT,
             linked_at TEXT DEFAULT (datetime('now')),
-            created_at TEXT DEFAULT (datetime('now')),
-            FOREIGN KEY (user_id) REFERENCES users(id)
+            created_at TEXT DEFAULT (datetime('now'))
+            -- Guest/demo users may create AA consents before full registration,
+            -- so no foreign-key constraint is enforced on user_id.
         );
 
         CREATE TABLE IF NOT EXISTS goals (
@@ -398,6 +399,31 @@ function initializeDatabase() {
         CREATE INDEX IF NOT EXISTS idx_otp_expires ON otp_attempts(expires_at);
     `);
 
+    // Migration: remove legacy foreign-key constraint from aa_consents
+    try {
+        const aaFkInfo = db.prepare("PRAGMA foreign_key_list('aa_consents')").all();
+        if (aaFkInfo.length > 0) {
+            db.prepare('PRAGMA foreign_keys = OFF').run();
+            db.prepare(`CREATE TABLE IF NOT EXISTS aa_consents_new (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id TEXT NOT NULL,
+                bank_name TEXT NOT NULL,
+                account_mask TEXT,
+                consent_id TEXT UNIQUE,
+                status TEXT DEFAULT 'active',
+                scopes TEXT,
+                linked_at TEXT DEFAULT (datetime('now')),
+                created_at TEXT DEFAULT (datetime('now'))
+            )`).run();
+            db.prepare(`INSERT INTO aa_consents_new SELECT * FROM aa_consents`).run();
+            db.prepare(`DROP TABLE aa_consents`).run();
+            db.prepare(`ALTER TABLE aa_consents_new RENAME TO aa_consents`).run();
+            db.prepare('PRAGMA foreign_keys = ON').run();
+        }
+    } catch (migrationErr) {
+        console.warn('AA consents migration skipped:', migrationErr.message);
+    }
+
     // Migration: add face_descriptor column for biometric login
     try {
         db.exec(`ALTER TABLE users ADD COLUMN face_descriptor TEXT`);
@@ -413,6 +439,58 @@ function initializeDatabase() {
     } catch (e) {
         // Column likely already exists
     }
+
+    // Phase 1: Account Aggregator mock tables (PSB-only demo)
+    try {
+        db.exec(`
+            CREATE TABLE IF NOT EXISTS aa_accounts (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                consent_id INTEGER NOT NULL,
+                user_id TEXT NOT NULL,
+                account_id TEXT UNIQUE NOT NULL,
+                account_number_masked TEXT,
+                account_type TEXT,
+                bank_name TEXT,
+                currency TEXT DEFAULT 'INR',
+                balance REAL DEFAULT 0,
+                status TEXT DEFAULT 'active',
+                discovered_at TEXT DEFAULT (datetime('now'))
+            );
+            CREATE INDEX IF NOT EXISTS idx_aa_accounts_consent ON aa_accounts(consent_id);
+            CREATE INDEX IF NOT EXISTS idx_aa_accounts_user ON aa_accounts(user_id);
+
+            CREATE TABLE IF NOT EXISTS aa_transactions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                account_id TEXT NOT NULL,
+                txn_id TEXT UNIQUE NOT NULL,
+                txn_date TEXT,
+                description TEXT,
+                amount REAL,
+                type TEXT,
+                category TEXT,
+                balance_after REAL,
+                created_at TEXT DEFAULT (datetime('now'))
+            );
+            CREATE INDEX IF NOT EXISTS idx_aa_transactions_account ON aa_transactions(account_id, txn_date);
+        `);
+        console.log('Migration applied: aa_accounts / aa_transactions tables ready');
+    } catch (e) {
+        console.warn('AA tables migration skipped:', e.message);
+    }
+
+    // Migration: add SETU AA tracking columns to aa_consents
+    try {
+        db.exec(`ALTER TABLE aa_consents ADD COLUMN setu_request_id TEXT`);
+        console.log('Migration applied: added setu_request_id column');
+    } catch (e) { /* column likely exists */ }
+    try {
+        db.exec(`ALTER TABLE aa_consents ADD COLUMN setu_consent_url TEXT`);
+        console.log('Migration applied: added setu_consent_url column');
+    } catch (e) { /* column likely exists */ }
+    try {
+        db.exec(`ALTER TABLE aa_consents ADD COLUMN setu_status TEXT`);
+        console.log('Migration applied: added setu_status column');
+    } catch (e) { /* column likely exists */ }
 
     console.log('SQLite database initialized');
 
@@ -836,12 +914,42 @@ const bankingDb = {
     createAaConsent: (data) => {
         const existing = db.prepare('SELECT * FROM aa_consents WHERE user_id = ? AND bank_name = ? AND status = ?').get(data.userId, data.bankName, 'active');
         if (existing) throw new Error('Bank already linked');
-        const stmt = db.prepare(`INSERT INTO aa_consents (user_id, bank_name, account_mask, consent_id, status, scopes) VALUES (?, ?, ?, ?, ?, ?)`);
-        return stmt.run(data.userId, data.bankName, data.accountMask || null, data.consentId || null, 'active', Array.isArray(data.scopes) ? data.scopes.join(',') : data.scopes || null);
+        const stmt = db.prepare(`INSERT INTO aa_consents (user_id, bank_name, account_mask, consent_id, status, scopes, setu_request_id, setu_consent_url, setu_status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`);
+        return stmt.run(data.userId, data.bankName, data.accountMask || null, data.consentId || null, 'active', Array.isArray(data.scopes) ? data.scopes.join(',') : data.scopes || null, data.setuRequestId || null, data.setuConsentUrl || null, data.setuStatus || null);
+    },
+    updateAaConsentSetu: (consentId, userId, setuData) => {
+        const stmt = db.prepare(`UPDATE aa_consents SET setu_request_id = COALESCE(?, setu_request_id), setu_consent_url = COALESCE(?, setu_consent_url), setu_status = COALESCE(?, setu_status), status = COALESCE(?, status) WHERE id = ? AND user_id = ?`);
+        return stmt.run(setuData.setuRequestId || null, setuData.setuConsentUrl || null, setuData.setuStatus || null, setuData.status || null, consentId, userId);
     },
     revokeAaConsent: (consentId, userId) => {
         const stmt = db.prepare(`UPDATE aa_consents SET status = 'revoked' WHERE id = ? AND user_id = ?`);
         return stmt.run(consentId, userId);
+    },
+    getAaConsentById: (consentId, userId) => {
+        return db.prepare('SELECT * FROM aa_consents WHERE id = ? AND user_id = ?').get(consentId, userId);
+    },
+    getAaConsentBySetuRequestId: (requestId) => {
+        return db.prepare('SELECT * FROM aa_consents WHERE setu_request_id = ?').get(requestId);
+    },
+    getAaAccountsByUser: (userId) => {
+        return db.prepare('SELECT * FROM aa_accounts WHERE user_id = ? AND status = ? ORDER BY discovered_at DESC').all(userId, 'active');
+    },
+    getAaAccountsByConsent: (consentId, userId) => {
+        return db.prepare('SELECT * FROM aa_accounts WHERE consent_id = ? AND user_id = ? AND status = ? ORDER BY discovered_at DESC').all(consentId, userId, 'active');
+    },
+    createAaAccount: (data) => {
+        const stmt = db.prepare(`INSERT INTO aa_accounts (consent_id, user_id, account_id, account_number_masked, account_type, bank_name, currency, balance) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`);
+        return stmt.run(data.consentId, data.userId, data.accountId, data.accountNumberMasked, data.accountType, data.bankName, data.currency || 'INR', data.balance || 0);
+    },
+    deactivateAaAccountsByConsent: (consentId, userId) => {
+        return db.prepare(`UPDATE aa_accounts SET status = 'revoked' WHERE consent_id = ? AND user_id = ?`).run(consentId, userId);
+    },
+    getAaTransactionsByAccount: (accountId) => {
+        return db.prepare('SELECT * FROM aa_transactions WHERE account_id = ? ORDER BY txn_date DESC, id DESC LIMIT 50').all(accountId);
+    },
+    createAaTransaction: (data) => {
+        const stmt = db.prepare(`INSERT INTO aa_transactions (account_id, txn_id, txn_date, description, amount, type, category, balance_after) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`);
+        return stmt.run(data.accountId, data.txnId, data.txnDate, data.description, data.amount, data.type, data.category, data.balanceAfter);
     }
 };
 
@@ -871,6 +979,10 @@ const otpDb = {
     getAttemptStats: (recipient, purpose = 'secure transaction') => {
         const row = db.prepare(`SELECT COUNT(*) as total, SUM(attempts) as total_attempts, MAX(attempts) as max_attempts FROM otp_attempts WHERE recipient = ? AND purpose = ? AND created_at > datetime('now', '-1 day')`).get(recipient, purpose);
         return row || { total: 0, total_attempts: 0, max_attempts: 0 };
+    },
+    getAttemptsInWindow: (recipient, purpose = 'secure transaction', minutes = 5) => {
+        const row = db.prepare(`SELECT COALESCE(SUM(attempts), 0) as total_attempts FROM otp_attempts WHERE recipient = ? AND purpose = ? AND created_at > datetime('now', '-${minutes} minutes')`).get(recipient, purpose);
+        return row ? Number(row.total_attempts) : 0;
     }
 };
 

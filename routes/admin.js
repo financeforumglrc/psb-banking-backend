@@ -6,17 +6,45 @@
 const express = require('express');
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 const jwt = require('jsonwebtoken');
+const rateLimit = require('express-rate-limit');
 const { quotaDb, db } = require('../services/database');
 const { authMiddleware, requireRole } = require('../middleware/auth');
 const router = express.Router();
 
-const ADMIN_ID = process.env.ADMIN_ID || 'TEAM EXCELLENT MINDS';
-const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || '123456@#Dd';
+const ADMIN_ID = process.env.ADMIN_ID;
+const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD;
 
-if (!process.env.ADMIN_PASSWORD && process.env.NODE_ENV === 'production') {
-    throw new Error('FATAL: ADMIN_PASSWORD environment variable is required in production');
+if (!ADMIN_ID || !ADMIN_PASSWORD) {
+    throw new Error('FATAL: ADMIN_ID and ADMIN_PASSWORD environment variables are required');
 }
+
+if (ADMIN_PASSWORD.length < 12) {
+    throw new Error('FATAL: ADMIN_PASSWORD must be at least 12 characters');
+}
+
+// Constant-time string comparison to prevent timing attacks on credentials.
+function constantTimeCompare(a, b) {
+    if (typeof a !== 'string' || typeof b !== 'string') return false;
+    const bufA = Buffer.from(a);
+    const bufB = Buffer.from(b);
+    if (bufA.length !== bufB.length) return false;
+    return crypto.timingSafeEqual(bufA, bufB);
+}
+
+// Stricter rate limiting for admin endpoints to mitigate brute-force attacks.
+const adminLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    max: 10,
+    message: {
+        success: false,
+        error: 'Too many admin attempts, please try again later.',
+        code: 'RATE_LIMIT_EXCEEDED'
+    },
+    standardHeaders: true,
+    legacyHeaders: false
+});
 
 function basicAuth(req, res, next) {
     const auth = req.headers.authorization;
@@ -26,7 +54,7 @@ function basicAuth(req, res, next) {
     }
     const credentials = Buffer.from(auth.split(' ')[1], 'base64').toString('utf8');
     const [user, pass] = credentials.split(':');
-    if (user !== ADMIN_ID || pass !== ADMIN_PASSWORD) {
+    if (!constantTimeCompare(user, ADMIN_ID) || !constantTimeCompare(pass, ADMIN_PASSWORD)) {
         res.setHeader('WWW-Authenticate', 'Basic realm="Admin"');
         return res.status(401).send('Invalid credentials');
     }
@@ -42,7 +70,7 @@ function adminApiAuth(req, res, next) {
     next();
 }
 
-router.get('/quota', basicAuth, (req, res) => {
+router.get('/quota', adminLimiter, basicAuth, (req, res) => {
     try {
         const quota = quotaDb.getOrCreateToday();
         res.json({
@@ -66,7 +94,7 @@ router.get('/quota', basicAuth, (req, res) => {
     }
 });
 
-router.get('/status', basicAuth, (req, res) => {
+router.get('/status', adminLimiter, basicAuth, (req, res) => {
     try {
         const quota = quotaDb.getOrCreateToday();
         const extractions = db.prepare('SELECT * FROM extractions ORDER BY created_at DESC LIMIT 50').all();
@@ -227,12 +255,12 @@ router.get('/status', basicAuth, (req, res) => {
 });
 
 // Admin API endpoints for frontend dashboard
-router.post('/login', (req, res) => {
+router.post('/login', adminLimiter, (req, res) => {
     const { adminId, password } = req.body;
-    if (!adminId || !password) {
+    if (!adminId || !password || typeof adminId !== 'string' || typeof password !== 'string') {
         return res.status(400).json({ success: false, error: 'Admin ID and password required' });
     }
-    if (adminId !== ADMIN_ID || password !== ADMIN_PASSWORD) {
+    if (!constantTimeCompare(adminId, ADMIN_ID) || !constantTimeCompare(password, ADMIN_PASSWORD)) {
         return res.status(401).json({ success: false, error: 'Invalid admin credentials' });
     }
     const token = jwt.sign(

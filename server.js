@@ -223,6 +223,14 @@ app.use('/api/v1/query', nlpQueryRoutes);
 app.use('/api/v1/screener', screenerRoutes);
 app.use('/api/v1/banking', bankingRoutes);
 app.use('/api/v1/kyc', authMiddleware, kycRoutes);
+// Account Aggregator mock endpoints (guest-friendly for demo; production uses authMiddleware)
+function aaGuestAuth(req, res, next) {
+    if (req.user && req.user.id) return next();
+    const guestId = req.headers['x-device-id'] || req.body?.userId || 'anonymous';
+    req.user = { id: String(guestId).slice(0, 64) };
+    next();
+}
+app.use('/api/v1/aa', aaGuestAuth, aaRoutes);
 
 // Patent information endpoint
 app.get('/api/v1/patents', (req, res) => {

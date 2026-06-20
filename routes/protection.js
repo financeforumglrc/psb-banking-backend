@@ -31,6 +31,17 @@ function getDeviceRisk(req) {
     };
   }
 
+  // If the user is not known to the backend, we cannot persist device trust state.
+  const userExists = userDb.findById(String(user_id));
+  if (!userExists) {
+    return {
+      isTrustedDevice: false,
+      isNewDevice: true,
+      riskDelta: 20,
+      reason: 'Action initiated from an unrecognized/new device (guest session).'
+    };
+  }
+
   const stored = deviceFingerprintDb.getTrustStatus(user_id, visitorId, fingerprintHash);
   if (stored) {
     deviceFingerprintDb.updateLastSeen(stored.id);
@@ -44,11 +55,22 @@ function getDeviceRisk(req) {
     };
   }
 
+  // First device for this user is auto-trusted; subsequent unknown devices are untrusted.
+  const isFirstDevice = !deviceFingerprintDb.hasTrustedDevice(user_id);
+  deviceFingerprintDb.create({
+    userId: user_id,
+    visitorId,
+    fingerprintHash: fingerprintHash || visitorId,
+    isTrusted: isFirstDevice
+  });
+
   return {
-    isTrustedDevice: false,
-    isNewDevice: true,
-    riskDelta: 20,
-    reason: 'Action initiated from an unrecognized/new device.'
+    isTrustedDevice: isFirstDevice,
+    isNewDevice: !isFirstDevice,
+    riskDelta: isFirstDevice ? 0 : 20,
+    reason: isFirstDevice
+      ? 'First device registered and trusted for this account.'
+      : 'Action initiated from a new unrecognized device.'
   };
 }
 
@@ -101,8 +123,13 @@ function evaluateWealthProtection(req) {
     factors.push(`Amount ₹${req.amount.toLocaleString('en-IN')} is significantly higher than your usual pattern.`);
   }
   if (otpAttempts > 1) {
-    riskScore += (otpAttempts - 1) * 15;
-    factors.push(`Multiple OTP attempts detected (${otpAttempts} tries).`);
+    riskScore += Math.min(30, (otpAttempts - 1) * 10);
+    factors.push(`Multiple OTP attempts detected (${otpAttempts} tries in the last 24 hours).`);
+  }
+  const recentOtpAttempts = recipient ? otpDb.getAttemptsInWindow(recipient, purpose, 5) : 0;
+  if (recentOtpAttempts >= 3) {
+    riskScore += 25;
+    factors.push(`OTP burst detected (${recentOtpAttempts} attempts in the last 5 minutes).`);
   }
   if (req.is_first_time_investment) {
     riskScore += 15;

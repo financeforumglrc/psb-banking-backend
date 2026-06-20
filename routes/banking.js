@@ -138,11 +138,15 @@ router.get('/transactions', authMiddleware, (req, res) => {
     }
 });
 
-// MPIN verification (demo gatekeeper — replace with per-user hashed PIN in production)
+// MPIN verification (demo gatekeeper — configured via DEMO_MPIN env, no default)
 router.post('/verify-mpin', authMiddleware, (req, res) => {
     try {
         const { mpin } = req.body;
-        const expected = process.env.DEMO_MPIN || '123456';
+        const expected = process.env.DEMO_MPIN;
+        if (!expected || !/^\d{6}$/.test(expected)) {
+            console.warn('DEMO_MPIN not configured or invalid; MPIN verification disabled.');
+            return res.status(503).json({ success: false, error: 'MPIN verification is not configured', code: 'MPIN_NOT_CONFIGURED' });
+        }
         const valid = String(mpin).length === 6 && mpin === expected;
         res.json({ success: true, valid });
     } catch (err) {
