@@ -31,7 +31,7 @@ router.get('/search', async (req, res) => {
         res.json({ success: true, data });
     } catch (err) {
         console.error('[screener/search]', err.message);
-        res.status(502).json({ success: false, error: err.message });
+        res.status(502).json({ success: false, error: 'Internal server error' });
     }
 });
 
@@ -45,7 +45,7 @@ router.get('/company/:ticker', scraperLimiter, async (req, res) => {
         console.error('[screener/company]', err.message);
         const status = err.message.includes('not found') ? 404
                      : err.message.includes('rate limit')  ? 429 : 502;
-        res.status(status).json({ success: false, error: err.message });
+        res.status(status).json({ success: false, error: 'Internal server error' });
     }
 });
 
@@ -84,7 +84,7 @@ router.get('/dcf-inputs/:ticker', scraperLimiter, async (req, res) => {
     } catch (err) {
         console.error('[screener/dcf-inputs]', err.message);
         const status = err.message.includes('not found') ? 404 : 502;
-        res.status(status).json({ success: false, error: err.message });
+        res.status(status).json({ success: false, error: 'Internal server error' });
     }
 });
 
@@ -123,7 +123,7 @@ router.get('/peer-compare', scraperLimiter, async (req, res) => {
         res.json({ success: true, data: { companies, failed } });
     } catch (err) {
         console.error('[screener/peer-compare]', err.message);
-        res.status(502).json({ success: false, error: err.message });
+        res.status(502).json({ success: false, error: 'Internal server error' });
     }
 });
 

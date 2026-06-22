@@ -409,7 +409,7 @@ router.post('/api/v1/protect-wealth-action', (req, res) => {
     const result = evaluateWealthProtection(req.body);
     res.json(result);
   } catch (err) {
-    res.status(500).json({ success: false, error: err.message });
+    res.status(500).json({ success: false, error: 'Internal server error' });
   }
 });
 
@@ -419,7 +419,7 @@ router.post('/api/v1/graph-risk', (req, res) => {
     const result = fraudGraph.analyze(user_id || 'unknown', payee || 'unknown', device_fingerprint);
     res.json(result);
   } catch (err) {
-    res.status(500).json({ success: false, error: err.message });
+    res.status(500).json({ success: false, error: 'Internal server error' });
   }
 });
 
@@ -438,7 +438,7 @@ router.post('/api/v1/biometric-risk', (req, res) => {
     }
     res.json({ risk_bonus: bonus, anomaly, reason });
   } catch (err) {
-    res.status(500).json({ success: false, error: err.message });
+    res.status(500).json({ success: false, error: 'Internal server error' });
   }
 });
 
@@ -456,7 +456,7 @@ router.get('/api/v1/aa/fetch', (req, res) => {
       message: 'Welcome back! I\'ve aggregated your unified financial picture. Your SecureWealth Twin is now monitoring across all linked institutions.',
     });
   } catch (err) {
-    res.status(500).json({ success: false, error: err.message });
+    res.status(500).json({ success: false, error: 'Internal server error' });
   }
 });
 
@@ -477,7 +477,7 @@ router.post('/api/v1/guardian-message', (req, res) => {
 
     res.json({ message, source: 'template' });
   } catch (err) {
-    res.status(500).json({ success: false, error: err.message });
+    res.status(500).json({ success: false, error: 'Internal server error' });
   }
 });
 

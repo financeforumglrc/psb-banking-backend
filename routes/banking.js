@@ -43,7 +43,7 @@ router.get('/accounts', authMiddleware, async (req, res) => {
         await cacheService.set(cacheKey, accounts, cacheService.TTL.BANKING_ACCOUNTS);
         res.json({ success: true, data: accounts });
     } catch (err) {
-        res.status(500).json({ success: false, error: err.message });
+        res.status(500).json({ success: false, error: 'Internal server error' });
     }
 });
 
@@ -66,7 +66,7 @@ router.post('/accounts', authMiddleware, (req, res) => {
         invalidateBankingCache(req.user.id);
         res.json({ success: true, data: { id: result.lastInsertRowid, accountNumber: accNum } });
     } catch (err) {
-        res.status(500).json({ success: false, error: err.message });
+        res.status(500).json({ success: false, error: 'Internal server error' });
     }
 });
 
@@ -78,7 +78,7 @@ router.get('/accounts/:id/balance', authMiddleware, (req, res) => {
         }
         res.json({ success: true, data: { balance: account.balance, accountNumber: account.account_number } });
     } catch (err) {
-        res.status(500).json({ success: false, error: err.message });
+        res.status(500).json({ success: false, error: 'Internal server error' });
     }
 });
 
@@ -95,7 +95,7 @@ router.patch('/accounts/:id/status', authMiddleware, (req, res) => {
         bankingDb.updateAccountStatus(req.params.id, status);
         res.json({ success: true, message: `Account status updated to ${status}` });
     } catch (err) {
-        res.status(500).json({ success: false, error: err.message });
+        res.status(500).json({ success: false, error: 'Internal server error' });
     }
 });
 
@@ -111,7 +111,7 @@ router.delete('/accounts/:id', authMiddleware, (req, res) => {
         bankingDb.deleteAccount(req.params.id);
         res.json({ success: true, message: 'Account closed successfully' });
     } catch (err) {
-        res.status(500).json({ success: false, error: err.message });
+        res.status(500).json({ success: false, error: 'Internal server error' });
     }
 });
 
@@ -208,7 +208,7 @@ router.post('/transactions', authMiddleware, (req, res) => {
         if (err.message === 'Insufficient balance') {
             return res.status(400).json({ success: false, error: 'Insufficient balance' });
         }
-        res.status(500).json({ success: false, error: err.message });
+        res.status(500).json({ success: false, error: 'Internal server error' });
     }
 });
 
@@ -218,7 +218,7 @@ router.get('/beneficiaries', authMiddleware, (req, res) => {
         const data = bankingDb.getBeneficiariesByUser(req.user.id);
         res.json({ success: true, data });
     } catch (err) {
-        res.status(500).json({ success: false, error: err.message });
+        res.status(500).json({ success: false, error: 'Internal server error' });
     }
 });
 
@@ -233,7 +233,7 @@ router.post('/beneficiaries', authMiddleware, (req, res) => {
         });
         res.json({ success: true, data: { id: result.lastInsertRowid } });
     } catch (err) {
-        res.status(500).json({ success: false, error: err.message });
+        res.status(500).json({ success: false, error: 'Internal server error' });
     }
 });
 
@@ -244,7 +244,7 @@ router.patch('/beneficiaries/:id', authMiddleware, (req, res) => {
         bankingDb.updateBeneficiary(req.params.id, req.body);
         res.json({ success: true, message: 'Beneficiary updated' });
     } catch (err) {
-        res.status(500).json({ success: false, error: err.message });
+        res.status(500).json({ success: false, error: 'Internal server error' });
     }
 });
 
@@ -255,7 +255,7 @@ router.delete('/beneficiaries/:id', authMiddleware, (req, res) => {
         bankingDb.deleteBeneficiary(req.params.id);
         res.json({ success: true, message: 'Beneficiary deleted' });
     } catch (err) {
-        res.status(500).json({ success: false, error: err.message });
+        res.status(500).json({ success: false, error: 'Internal server error' });
     }
 });
 
@@ -265,7 +265,7 @@ router.get('/cards', authMiddleware, (req, res) => {
         const data = bankingDb.getCardsByUser(req.user.id);
         res.json({ success: true, data });
     } catch (err) {
-        res.status(500).json({ success: false, error: err.message });
+        res.status(500).json({ success: false, error: 'Internal server error' });
     }
 });
 
@@ -287,7 +287,7 @@ router.post('/cards', authMiddleware, (req, res) => {
         });
         res.json({ success: true, data: { id: result.lastInsertRowid, cardNumber: cardNum } });
     } catch (err) {
-        res.status(500).json({ success: false, error: err.message });
+        res.status(500).json({ success: false, error: 'Internal server error' });
     }
 });
 
@@ -302,7 +302,7 @@ router.patch('/cards/:id/status', authMiddleware, (req, res) => {
         bankingDb.updateCardStatus(req.params.id, status);
         res.json({ success: true, message: 'Card status updated' });
     } catch (err) {
-        res.status(500).json({ success: false, error: err.message });
+        res.status(500).json({ success: false, error: 'Internal server error' });
     }
 });
 
@@ -314,7 +314,7 @@ router.patch('/cards/:id/limits', authMiddleware, (req, res) => {
         bankingDb.updateCardLimits(req.params.id, { limitDaily, limitMonthly });
         res.json({ success: true, message: 'Card limits updated' });
     } catch (err) {
-        res.status(500).json({ success: false, error: err.message });
+        res.status(500).json({ success: false, error: 'Internal server error' });
     }
 });
 
@@ -325,7 +325,7 @@ router.delete('/cards/:id', authMiddleware, (req, res) => {
         bankingDb.deleteCard(req.params.id);
         res.json({ success: true, message: 'Card removed' });
     } catch (err) {
-        res.status(500).json({ success: false, error: err.message });
+        res.status(500).json({ success: false, error: 'Internal server error' });
     }
 });
 
@@ -335,7 +335,7 @@ router.get('/bills', authMiddleware, (req, res) => {
         const data = bankingDb.getBillsByUser(req.user.id);
         res.json({ success: true, data });
     } catch (err) {
-        res.status(500).json({ success: false, error: err.message });
+        res.status(500).json({ success: false, error: 'Internal server error' });
     }
 });
 
@@ -350,7 +350,7 @@ router.post('/bills', authMiddleware, (req, res) => {
         });
         res.json({ success: true, data: { id: result.lastInsertRowid } });
     } catch (err) {
-        res.status(500).json({ success: false, error: err.message });
+        res.status(500).json({ success: false, error: 'Internal server error' });
     }
 });
 
@@ -361,7 +361,7 @@ router.patch('/bills/:id/status', authMiddleware, (req, res) => {
         bankingDb.updateBillStatus(req.params.id, req.body.status);
         res.json({ success: true, message: 'Bill status updated' });
     } catch (err) {
-        res.status(500).json({ success: false, error: err.message });
+        res.status(500).json({ success: false, error: 'Internal server error' });
     }
 });
 
@@ -372,7 +372,7 @@ router.patch('/bills/:id', authMiddleware, (req, res) => {
         bankingDb.updateBill(req.params.id, req.body);
         res.json({ success: true, message: 'Bill updated' });
     } catch (err) {
-        res.status(500).json({ success: false, error: err.message });
+        res.status(500).json({ success: false, error: 'Internal server error' });
     }
 });
 
@@ -383,7 +383,7 @@ router.delete('/bills/:id', authMiddleware, (req, res) => {
         bankingDb.deleteBill(req.params.id);
         res.json({ success: true, message: 'Bill deleted' });
     } catch (err) {
-        res.status(500).json({ success: false, error: err.message });
+        res.status(500).json({ success: false, error: 'Internal server error' });
     }
 });
 
@@ -413,7 +413,7 @@ router.post('/bills/:id/pay', authMiddleware, (req, res) => {
         if (err.message === 'Insufficient balance') {
             return res.status(400).json({ success: false, error: 'Insufficient balance' });
         }
-        res.status(500).json({ success: false, error: err.message });
+        res.status(500).json({ success: false, error: 'Internal server error' });
     }
 });
 
@@ -423,7 +423,7 @@ router.get('/subscriptions', authMiddleware, (req, res) => {
         const data = bankingDb.getSubscriptionsByUser(req.user.id);
         res.json({ success: true, data });
     } catch (err) {
-        res.status(500).json({ success: false, error: err.message });
+        res.status(500).json({ success: false, error: 'Internal server error' });
     }
 });
 
@@ -438,7 +438,7 @@ router.post('/subscriptions', authMiddleware, (req, res) => {
         });
         res.json({ success: true, data: { id: result.lastInsertRowid } });
     } catch (err) {
-        res.status(500).json({ success: false, error: err.message });
+        res.status(500).json({ success: false, error: 'Internal server error' });
     }
 });
 
@@ -449,7 +449,7 @@ router.patch('/subscriptions/:id', authMiddleware, (req, res) => {
         bankingDb.updateSubscription(req.params.id, req.body);
         res.json({ success: true, message: 'Subscription updated' });
     } catch (err) {
-        res.status(500).json({ success: false, error: err.message });
+        res.status(500).json({ success: false, error: 'Internal server error' });
     }
 });
 
@@ -460,7 +460,7 @@ router.delete('/subscriptions/:id', authMiddleware, (req, res) => {
         bankingDb.deleteSubscription(req.params.id);
         res.json({ success: true, message: 'Subscription cancelled' });
     } catch (err) {
-        res.status(500).json({ success: false, error: err.message });
+        res.status(500).json({ success: false, error: 'Internal server error' });
     }
 });
 
@@ -470,7 +470,7 @@ router.get('/goals', authMiddleware, (req, res) => {
         const data = bankingDb.getGoalsByUser(req.user.id);
         res.json({ success: true, data });
     } catch (err) {
-        res.status(500).json({ success: false, error: err.message });
+        res.status(500).json({ success: false, error: 'Internal server error' });
     }
 });
 
@@ -485,7 +485,7 @@ router.post('/goals', authMiddleware, (req, res) => {
         });
         res.json({ success: true, data: { id: result.lastInsertRowid } });
     } catch (err) {
-        res.status(500).json({ success: false, error: err.message });
+        res.status(500).json({ success: false, error: 'Internal server error' });
     }
 });
 
@@ -517,7 +517,7 @@ router.patch('/goals/:id/contribute', authMiddleware, (req, res) => {
         if (err.message === 'Insufficient balance') {
             return res.status(400).json({ success: false, error: 'Insufficient balance' });
         }
-        res.status(500).json({ success: false, error: err.message });
+        res.status(500).json({ success: false, error: 'Internal server error' });
     }
 });
 
@@ -528,7 +528,7 @@ router.patch('/goals/:id', authMiddleware, (req, res) => {
         bankingDb.updateGoal(req.params.id, req.body);
         res.json({ success: true, message: 'Goal updated' });
     } catch (err) {
-        res.status(500).json({ success: false, error: err.message });
+        res.status(500).json({ success: false, error: 'Internal server error' });
     }
 });
 
@@ -539,7 +539,7 @@ router.delete('/goals/:id', authMiddleware, (req, res) => {
         bankingDb.deleteGoal(req.params.id);
         res.json({ success: true, message: 'Goal deleted' });
     } catch (err) {
-        res.status(500).json({ success: false, error: err.message });
+        res.status(500).json({ success: false, error: 'Internal server error' });
     }
 });
 
@@ -549,7 +549,7 @@ router.get('/assets', authMiddleware, (req, res) => {
         const data = bankingDb.getAssetsByUser(req.user.id);
         res.json({ success: true, data });
     } catch (err) {
-        res.status(500).json({ success: false, error: err.message });
+        res.status(500).json({ success: false, error: 'Internal server error' });
     }
 });
 
@@ -564,7 +564,7 @@ router.post('/assets', authMiddleware, (req, res) => {
         });
         res.json({ success: true, data: { id: result.lastInsertRowid } });
     } catch (err) {
-        res.status(500).json({ success: false, error: err.message });
+        res.status(500).json({ success: false, error: 'Internal server error' });
     }
 });
 
@@ -575,7 +575,7 @@ router.patch('/assets/:id', authMiddleware, (req, res) => {
         bankingDb.updateAsset(req.params.id, req.body);
         res.json({ success: true, message: 'Asset updated' });
     } catch (err) {
-        res.status(500).json({ success: false, error: err.message });
+        res.status(500).json({ success: false, error: 'Internal server error' });
     }
 });
 
@@ -586,7 +586,7 @@ router.delete('/assets/:id', authMiddleware, (req, res) => {
         bankingDb.deleteAsset(req.params.id);
         res.json({ success: true, message: 'Asset deleted' });
     } catch (err) {
-        res.status(500).json({ success: false, error: err.message });
+        res.status(500).json({ success: false, error: 'Internal server error' });
     }
 });
 
@@ -596,7 +596,7 @@ router.get('/loans', authMiddleware, (req, res) => {
         const data = bankingDb.getLoansByUser(req.user.id);
         res.json({ success: true, data });
     } catch (err) {
-        res.status(500).json({ success: false, error: err.message });
+        res.status(500).json({ success: false, error: 'Internal server error' });
     }
 });
 
@@ -620,7 +620,7 @@ router.post('/loans', authMiddleware, (req, res) => {
         });
         res.json({ success: true, data: { id: result.lastInsertRowid, emiAmount: emi, totalPayable } });
     } catch (err) {
-        res.status(500).json({ success: false, error: err.message });
+        res.status(500).json({ success: false, error: 'Internal server error' });
     }
 });
 
@@ -655,7 +655,7 @@ router.patch('/loans/:id/pay', authMiddleware, (req, res) => {
         if (err.message === 'Insufficient balance') {
             return res.status(400).json({ success: false, error: 'Insufficient balance' });
         }
-        res.status(500).json({ success: false, error: err.message });
+        res.status(500).json({ success: false, error: 'Internal server error' });
     }
 });
 
@@ -665,7 +665,7 @@ router.get('/recurring', authMiddleware, (req, res) => {
         const data = bankingDb.getRecurringByUser(req.user.id);
         res.json({ success: true, data });
     } catch (err) {
-        res.status(500).json({ success: false, error: err.message });
+        res.status(500).json({ success: false, error: 'Internal server error' });
     }
 });
 
@@ -680,7 +680,7 @@ router.post('/recurring', authMiddleware, (req, res) => {
         });
         res.json({ success: true, data: { id: result.lastInsertRowid } });
     } catch (err) {
-        res.status(500).json({ success: false, error: err.message });
+        res.status(500).json({ success: false, error: 'Internal server error' });
     }
 });
 
@@ -691,7 +691,7 @@ router.patch('/recurring/:id', authMiddleware, (req, res) => {
         bankingDb.updateRecurring(req.params.id, req.body);
         res.json({ success: true, message: 'Recurring payment updated' });
     } catch (err) {
-        res.status(500).json({ success: false, error: err.message });
+        res.status(500).json({ success: false, error: 'Internal server error' });
     }
 });
 
@@ -702,7 +702,7 @@ router.delete('/recurring/:id', authMiddleware, (req, res) => {
         bankingDb.deleteRecurring(req.params.id);
         res.json({ success: true, message: 'Recurring payment cancelled' });
     } catch (err) {
-        res.status(500).json({ success: false, error: err.message });
+        res.status(500).json({ success: false, error: 'Internal server error' });
     }
 });
 
@@ -770,7 +770,7 @@ router.post('/recurring/:id/execute', authMiddleware, (req, res) => {
             }
         });
     } catch (err) {
-        res.status(500).json({ success: false, error: err.message });
+        res.status(500).json({ success: false, error: 'Internal server error' });
     }
 });
 
@@ -785,7 +785,7 @@ router.get('/payments/config', authMiddleware, (req, res) => {
             }
         });
     } catch (err) {
-        res.status(500).json({ success: false, error: err.message });
+        res.status(500).json({ success: false, error: 'Internal server error' });
     }
 });
 
@@ -807,7 +807,7 @@ router.post('/payments/create-order', authMiddleware, async (req, res) => {
 
         res.json({ success: true, data: order });
     } catch (err) {
-        res.status(500).json({ success: false, error: err.message });
+        res.status(500).json({ success: false, error: 'Internal server error' });
     }
 });
 
@@ -854,7 +854,7 @@ router.post('/payments/verify', authMiddleware, async (req, res) => {
         if (err.message === 'Insufficient balance') {
             return res.status(400).json({ success: false, error: 'Insufficient balance' });
         }
-        res.status(500).json({ success: false, error: err.message });
+        res.status(500).json({ success: false, error: 'Internal server error' });
     }
 });
 
@@ -863,7 +863,7 @@ router.get('/payments/plans', (req, res) => {
     try {
         res.json({ success: true, data: paymentService.getPlans() });
     } catch (err) {
-        res.status(500).json({ success: false, error: err.message });
+        res.status(500).json({ success: false, error: 'Internal server error' });
     }
 });
 
@@ -876,7 +876,7 @@ router.post('/payments/subscription', authMiddleware, async (req, res) => {
         const subscription = await paymentService.createSubscription(planId, req.user.id);
         res.json({ success: true, data: subscription });
     } catch (err) {
-        res.status(500).json({ success: false, error: err.message });
+        res.status(500).json({ success: false, error: 'Internal server error' });
     }
 });
 
@@ -914,7 +914,7 @@ router.post('/payments/webhook', async (req, res) => {
         res.json({ success: true, received: true });
     } catch (err) {
         console.error('Razorpay webhook error:', err.message);
-        res.status(500).json({ success: false, error: err.message });
+        res.status(500).json({ success: false, error: 'Internal server error' });
     }
 });
 
@@ -951,7 +951,7 @@ router.get('/audit', authMiddleware, (req, res) => {
         });
         res.json({ success: true, data });
     } catch (err) {
-        res.status(500).json({ success: false, error: err.message });
+        res.status(500).json({ success: false, error: 'Internal server error' });
     }
 });
 
@@ -987,7 +987,7 @@ router.get('/statements/:accountId', authMiddleware, (req, res) => {
             }
         });
     } catch (err) {
-        res.status(500).json({ success: false, error: err.message });
+        res.status(500).json({ success: false, error: 'Internal server error' });
     }
 });
 
@@ -1054,7 +1054,7 @@ router.get('/dashboard', authMiddleware, (req, res) => {
             }
         });
     } catch (err) {
-        res.status(500).json({ success: false, error: err.message });
+        res.status(500).json({ success: false, error: 'Internal server error' });
     }
 });
 
@@ -1274,7 +1274,7 @@ router.post('/seed', authMiddleware, requireRole('admin'), (req, res) => {
 
         res.json({ success: true, message: 'Judge demo data seeded successfully' });
     } catch (err) {
-        res.status(500).json({ success: false, error: err.message });
+        res.status(500).json({ success: false, error: 'Internal server error' });
     }
 });
 
@@ -1357,7 +1357,7 @@ router.get('/business/cashflow', authMiddleware, async (req, res) => {
         res.json({ success: true, data: result });
     } catch (err) {
         console.error('Business cashflow error:', err);
-        res.status(500).json({ success: false, error: err.message });
+        res.status(500).json({ success: false, error: 'Internal server error' });
     }
 });
 

@@ -466,7 +466,6 @@ ${JSON.stringify(model_snapshot || {}, null, 2).substring(0, 40000)}
         }
     } catch (error) {
         console.error('AI chat error:', error);
-        console.error('AI chat error:', error);
         res.status(500).json({ success: false, error: 'Chat failed' });
     }
 });

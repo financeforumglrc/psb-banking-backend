@@ -221,10 +221,10 @@ router.post('/consents', async (req, res) => {
         });
     } catch (err) {
         if (err.message === 'Bank already linked') {
-            return res.status(409).json({ success: false, error: err.message });
+            return res.status(409).json({ success: false, error: 'Internal server error' });
         }
         console.error('AA consent create error:', err);
-        res.status(500).json({ success: false, error: err.message || 'Failed to create AA consent' });
+        res.status(500).json({ success: false, error: 'Internal server error' || 'Failed to create AA consent' });
     }
 });
 
