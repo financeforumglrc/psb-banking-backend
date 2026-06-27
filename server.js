@@ -36,6 +36,7 @@ const kycRoutes = require('./routes/kyc');
 const aaRoutes = require('./routes/aa');
 const protectionRoutes = require('./routes/protection');
 const otpRoutes = require('./routes/otp');
+const msmeRoutes = require('./routes/msme');
 
 // Import middleware
 const { errorHandler } = require('./middleware/errorHandler');
@@ -304,6 +305,7 @@ app.use('/', protectionRoutes);
 
 // OTP API (email-based one-time passwords)
 app.use('/api/v1/otp', otpRoutes);
+app.use('/api/v1/msme', authMiddleware, msmeRoutes);
 
 // Static file serving - ONLY serve from public directory, never parent dirs
 app.use(express.static(path.join(__dirname, '..', 'public'), {

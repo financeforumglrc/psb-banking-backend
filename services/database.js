@@ -602,6 +602,236 @@ const sessionDb = {
 
 initializeDatabase();
 
+// MSME CreditBridge AI tables
+db.exec(`
+    CREATE TABLE IF NOT EXISTS msme_applications (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id TEXT NOT NULL,
+        application_ref TEXT UNIQUE NOT NULL,
+        business_name TEXT NOT NULL,
+        udyam_number TEXT,
+        gstin TEXT,
+        pan_number TEXT,
+        aadhaar_masked TEXT,
+        enterprise_type TEXT DEFAULT 'micro',
+        annual_turnover REAL DEFAULT 0,
+        employees INTEGER DEFAULT 0,
+        requested_amount REAL NOT NULL,
+        requested_tenure INTEGER NOT NULL,
+        purpose TEXT,
+        consent_gst INTEGER DEFAULT 0,
+        consent_aa INTEGER DEFAULT 0,
+        consent_upi INTEGER DEFAULT 0,
+        status TEXT DEFAULT 'scoring',
+        decision TEXT,
+        decision_reason TEXT,
+        scored_at TEXT,
+        created_at TEXT DEFAULT (datetime('now')),
+        updated_at TEXT DEFAULT (datetime('now')),
+        FOREIGN KEY (user_id) REFERENCES users(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS msme_credit_scores (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        application_id INTEGER NOT NULL UNIQUE,
+        score INTEGER NOT NULL,
+        category TEXT NOT NULL,
+        factors_json TEXT NOT NULL,
+        eli5 TEXT,
+        recommendations_json TEXT,
+        fraud_signals_json TEXT,
+        created_at TEXT DEFAULT (datetime('now')),
+        FOREIGN KEY (application_id) REFERENCES msme_applications(id) ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS msme_documents (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        application_id INTEGER NOT NULL,
+        doc_type TEXT NOT NULL,
+        file_name TEXT,
+        storage_path TEXT,
+        verification_status TEXT DEFAULT 'pending',
+        created_at TEXT DEFAULT (datetime('now')),
+        FOREIGN KEY (application_id) REFERENCES msme_applications(id) ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS msme_offers (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        application_id INTEGER NOT NULL,
+        offer_type TEXT NOT NULL DEFAULT 'primary',
+        principal_amount REAL NOT NULL,
+        interest_rate REAL NOT NULL,
+        tenure_months INTEGER NOT NULL,
+        emi_amount REAL NOT NULL,
+        total_interest REAL NOT NULL,
+        total_repayment REAL NOT NULL,
+        processing_fee REAL DEFAULT 0,
+        gst_on_fees REAL DEFAULT 0,
+        cgtmse_applicable INTEGER DEFAULT 0,
+        cgtmse_guarantee_percent REAL DEFAULT 0,
+        cgtmse_guaranteed_amount REAL DEFAULT 0,
+        collateral_required INTEGER DEFAULT 0,
+        conditions_json TEXT,
+        status TEXT DEFAULT 'offered',
+        accepted_at TEXT,
+        created_at TEXT DEFAULT (datetime('now')),
+        FOREIGN KEY (application_id) REFERENCES msme_applications(id) ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS msme_audit_logs (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        application_id INTEGER NOT NULL,
+        user_id TEXT NOT NULL,
+        action TEXT NOT NULL,
+        details_json TEXT,
+        created_at TEXT DEFAULT (datetime('now')),
+        FOREIGN KEY (application_id) REFERENCES msme_applications(id) ON DELETE CASCADE,
+        FOREIGN KEY (user_id) REFERENCES users(id)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_msme_applications_user ON msme_applications(user_id);
+    CREATE INDEX IF NOT EXISTS idx_msme_applications_status ON msme_applications(status);
+    CREATE INDEX IF NOT EXISTS idx_msme_applications_ref ON msme_applications(application_ref);
+    CREATE INDEX IF NOT EXISTS idx_msme_applications_created ON msme_applications(created_at);
+    CREATE INDEX IF NOT EXISTS idx_msme_scores_app ON msme_credit_scores(application_id);
+    CREATE INDEX IF NOT EXISTS idx_msme_documents_app ON msme_documents(application_id);
+    CREATE INDEX IF NOT EXISTS idx_msme_offers_app ON msme_offers(application_id);
+    CREATE INDEX IF NOT EXISTS idx_msme_audit_app ON msme_audit_logs(application_id);
+`);
+
+function safeJsonParse(value, fallback) {
+    try {
+        return value ? JSON.parse(value) : fallback;
+    } catch {
+        return fallback;
+    }
+}
+
+const msmeDb = {
+    createApplication: (data) => {
+        const stmt = db.prepare(`INSERT INTO msme_applications
+            (user_id, application_ref, business_name, udyam_number, gstin, pan_number, aadhaar_masked, enterprise_type,
+             annual_turnover, employees, requested_amount, requested_tenure, purpose,
+             consent_gst, consent_aa, consent_upi, status, decision, decision_reason, scored_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
+        return stmt.run(
+            data.userId, data.applicationRef, data.businessName, data.udyamNumber || null,
+            data.gstin || null, data.panNumber || null, data.aadhaarMasked || null,
+            data.enterpriseType || 'micro', data.annualTurnover || 0, data.employees || 0,
+            data.requestedAmount, data.requestedTenure, data.purpose || null,
+            data.consentGst ? 1 : 0, data.consentAa ? 1 : 0, data.consentUpi ? 1 : 0,
+            data.status || 'scoring', data.decision || null, data.decisionReason || null,
+            data.scoredAt || null
+        );
+    },
+    getApplicationById: (id) => {
+        const row = db.prepare('SELECT * FROM msme_applications WHERE id = ?').get(id);
+        if (!row) return null;
+        return {
+            ...row,
+            consentGst: !!row.consent_gst,
+            consentAa: !!row.consent_aa,
+            consentUpi: !!row.consent_upi,
+            cgtmseApplicable: false,
+        };
+    },
+    getApplicationsByUser: (userId, limit = 50) => {
+        return db.prepare('SELECT * FROM msme_applications WHERE user_id = ? ORDER BY created_at DESC LIMIT ?').all(userId, limit);
+    },
+    getApplications: (filters = {}) => {
+        let sql = `SELECT a.*, u.name AS user_name, u.email AS user_email FROM msme_applications a LEFT JOIN users u ON a.user_id = u.id WHERE 1=1`;
+        const params = [];
+        if (filters.status) { sql += ' AND a.status = ?'; params.push(filters.status); }
+        if (filters.decision) { sql += ' AND a.decision = ?'; params.push(filters.decision); }
+        if (filters.userId) { sql += ' AND a.user_id = ?'; params.push(filters.userId); }
+        if (filters.q) {
+            sql += ` AND (a.application_ref LIKE ? OR a.business_name LIKE ? OR u.name LIKE ? OR u.email LIKE ?)`;
+            const like = `%${filters.q}%`;
+            params.push(like, like, like, like);
+        }
+        const countRow = db.prepare(`SELECT COUNT(*) as total FROM msme_applications a LEFT JOIN users u ON a.user_id = u.id WHERE 1=1 ${sql.split('WHERE 1=1')[1] || ''}`).get(...params);
+        const allowedSort = ['created_at', 'updated_at', 'requested_amount'].includes(filters.sort) ? filters.sort : 'created_at';
+        const dir = filters.order && filters.order.toLowerCase() === 'asc' ? 'ASC' : 'DESC';
+        sql += ` ORDER BY a.${allowedSort} ${dir}`;
+        const page = Math.max(1, parseInt(filters.page) || 1);
+        const limit = Math.max(1, Math.min(500, parseInt(filters.limit) || 50));
+        const offset = (page - 1) * limit;
+        sql += ' LIMIT ? OFFSET ?';
+        const rows = db.prepare(sql).all(...params, limit, offset);
+        return { applications: rows, total: countRow.total, page, limit, pages: Math.ceil(countRow.total / limit) };
+    },
+    updateApplication: (id, data) => {
+        const stmt = db.prepare(`UPDATE msme_applications SET
+            status = COALESCE(?, status),
+            decision = COALESCE(?, decision),
+            decision_reason = COALESCE(?, decision_reason),
+            scored_at = COALESCE(?, scored_at),
+            updated_at = datetime('now')
+            WHERE id = ?`);
+        return stmt.run(data.status || null, data.decision || null, data.decisionReason || null, data.scoredAt || null, id);
+    },
+    deleteApplication: (id) => db.prepare('DELETE FROM msme_applications WHERE id = ?').run(id),
+
+    createScore: (data) => {
+        const stmt = db.prepare(`INSERT INTO msme_credit_scores
+            (application_id, score, category, factors_json, eli5, recommendations_json, fraud_signals_json)
+            VALUES (?, ?, ?, ?, ?, ?, ?)`);
+        return stmt.run(
+            data.applicationId, data.score, data.category,
+            JSON.stringify(data.factors || []),
+            data.eli5 || null,
+            JSON.stringify(data.recommendations || []),
+            JSON.stringify(data.fraudSignals || [])
+        );
+    },
+    getScoreByApplication: (applicationId) => {
+        const row = db.prepare('SELECT * FROM msme_credit_scores WHERE application_id = ?').get(applicationId);
+        if (!row) return null;
+        return {
+            ...row,
+            factors: safeJsonParse(row.factors_json, []),
+            recommendations: safeJsonParse(row.recommendations_json, []),
+            fraudSignals: safeJsonParse(row.fraud_signals_json, [])
+        };
+    },
+
+    createDocument: (data) => {
+        const stmt = db.prepare(`INSERT INTO msme_documents (application_id, doc_type, file_name, storage_path, verification_status) VALUES (?, ?, ?, ?, ?)`);
+        return stmt.run(data.applicationId, data.docType, data.fileName || null, data.storagePath || null, data.verificationStatus || 'pending');
+    },
+    getDocumentsByApplication: (applicationId) => db.prepare('SELECT * FROM msme_documents WHERE application_id = ? ORDER BY created_at DESC').all(applicationId),
+
+    createOffer: (data) => {
+        const stmt = db.prepare(`INSERT INTO msme_offers
+            (application_id, offer_type, principal_amount, interest_rate, tenure_months, emi_amount,
+             total_interest, total_repayment, processing_fee, gst_on_fees, cgtmse_applicable,
+             cgtmse_guarantee_percent, cgtmse_guaranteed_amount, collateral_required, conditions_json)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
+        return stmt.run(
+            data.applicationId, data.offerType || 'primary', data.principalAmount, data.interestRate,
+            data.tenureMonths, data.emiAmount, data.totalInterest, data.totalRepayment,
+            data.processingFee || 0, data.gstOnFees || 0, data.cgtmseApplicable ? 1 : 0,
+            data.cgtmseGuaranteePercent || 0, data.cgtmseGuaranteedAmount || 0,
+            data.collateralRequired ? 1 : 0, data.conditions ? JSON.stringify(data.conditions) : null
+        );
+    },
+    getOffersByApplication: (applicationId) => {
+        return db.prepare('SELECT * FROM msme_offers WHERE application_id = ? ORDER BY created_at DESC').all(applicationId).map(o => ({
+            ...o,
+            cgtmseApplicable: !!o.cgtmse_applicable,
+            collateralRequired: !!o.collateral_required,
+            conditions: safeJsonParse(o.conditions_json, [])
+        }));
+    },
+    acceptOffer: (offerId) => db.prepare("UPDATE msme_offers SET status = 'accepted', accepted_at = datetime('now') WHERE id = ?").run(offerId),
+
+    createAuditLog: (data) => {
+        const stmt = db.prepare(`INSERT INTO msme_audit_logs (application_id, user_id, action, details_json) VALUES (?, ?, ?, ?)`);
+        return stmt.run(data.applicationId, data.userId, data.action, JSON.stringify(data.details || {}));
+    },
+    getAuditLogsByApplication: (applicationId) => db.prepare('SELECT * FROM msme_audit_logs WHERE application_id = ? ORDER BY created_at DESC').all(applicationId).map(l => ({ ...l, details: safeJsonParse(l.details_json, {}) }))
+};
+
 const aiRunsDb = {
     create: (run) => {
         const stmt = db.prepare(`INSERT INTO ai_runs (device_id, task, provider, model, input_tokens, output_tokens, latency_ms, cost_usd_estimate, success, error_message) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
@@ -1044,6 +1274,8 @@ module.exports = {
     bankingDb,
     deviceFingerprintDb,
     otpDb,
+    msmeDb,
+    safeJsonParse,
     ready: readyPromise,
     pgAdapter
 };
