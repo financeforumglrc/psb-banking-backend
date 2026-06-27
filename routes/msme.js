@@ -17,6 +17,35 @@ function generateRef() {
     return `CB-${Date.now()}-${Math.floor(Math.random() * 10000)}`;
 }
 
+const SCORE_FIELDS = [
+    'gstComplianceScore',
+    'cashFlowStabilityScore',
+    'transactionVolumeScore',
+    'digitalAdoptionScore',
+    'creditHistoryScore',
+];
+
+// Normalize frontend aliases and nested `signals` to canonical backend schema.
+function normalizeMsmeBody(body) {
+    const b = { ...body };
+    if (b.entityType !== undefined && b.enterpriseType === undefined) b.enterpriseType = b.entityType;
+    if (b.turnover !== undefined && b.annualTurnover === undefined) b.annualTurnover = b.turnover;
+    if (b.tenureMonths !== undefined && b.requestedTenure === undefined) b.requestedTenure = b.tenureMonths;
+    if (b.consents && typeof b.consents === 'object') {
+        if (b.consentGst === undefined) b.consentGst = !!b.consents.gst;
+        if (b.consentAa === undefined) b.consentAa = !!b.consents.aa;
+        if (b.consentUpi === undefined) b.consentUpi = !!b.consents.upi;
+    }
+    if (b.signals && typeof b.signals === 'object') {
+        for (const field of SCORE_FIELDS) {
+            if (b[field] === undefined && b.signals[field] !== undefined) {
+                b[field] = b.signals[field];
+            }
+        }
+    }
+    return b;
+}
+
 function maskApplication(row) {
     if (!row) return row;
     return {
@@ -71,10 +100,10 @@ const acceptOfferSchema = z.object({
 }).strict();
 
 // Apply for MSME loan
-router.post('/apply', authMiddleware, validateBody(applySchema), async (req, res) => {
+router.post('/apply', authMiddleware, async (req, res) => {
     try {
         const userId = req.user.id;
-        const data = req.body;
+        const data = applySchema.parse(normalizeMsmeBody(req.body));
         const applicationRef = generateRef();
 
         const appResult = msmeDb.createApplication({
@@ -176,9 +205,9 @@ router.post('/apply', authMiddleware, validateBody(applySchema), async (req, res
 });
 
 // Score preview without persistence
-router.post('/score', authMiddleware, validateBody(scorePreviewSchema), (req, res) => {
+router.post('/score', authMiddleware, (req, res) => {
     try {
-        const data = req.body;
+        const data = scorePreviewSchema.parse(normalizeMsmeBody(req.body));
         const scoringInput = {
             ...data,
             gstComplianceScore: data.gstComplianceScore ?? 75,
