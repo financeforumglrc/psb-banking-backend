@@ -1,20 +1,14 @@
 /**
  * SQLite Database Service
  * Provides persistent storage for DS Financial API
- *
- * When DATABASE_URL is set (e.g. Render PostgreSQL), the service uses a
- * Postgres-backed persistence adapter: it hydrates SQLite from Postgres on
- * startup, records every local mutation in a sync queue, and flushes that
- * queue to Postgres in the background. This preserves the existing
- * synchronous better-sqlite3 API used throughout the codebase.
  */
 
 const sqlite3 = require('better-sqlite3');
 const path = require('path');
 const fs = require('fs');
-const pgAdapter = require('./pgAdapter');
+const { maskEmail, maskPhone, maskPan, maskAadhaar } = require('../lib/pii');
 
-const dbPath = process.env.DATABASE_PATH || path.join(__dirname, '..', 'data', 'ds_financial.db');
+const dbPath = process.env.DATABASE_PATH || process.env.DB_PATH || path.join(__dirname, '..', 'data', 'ds_financial.db');
 const dbDir = path.dirname(dbPath);
 
 if (!fs.existsSync(dbDir)) {
@@ -25,8 +19,6 @@ const db = new sqlite3(dbPath);
 
 db.pragma('journal_mode = WAL');
 db.pragma('foreign_keys = ON');
-
-let readyPromise = Promise.resolve();
 
 function initializeDatabase() {
     db.exec(`
@@ -71,6 +63,13 @@ function initializeDatabase() {
         CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id);
 
         -- Phase 2 v2: AI audit & quota tables
+        CREATE TABLE IF NOT EXISTS ai_cache (
+            cache_key TEXT PRIMARY KEY,
+            response TEXT NOT NULL,
+            created_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+        CREATE INDEX IF NOT EXISTS idx_ai_cache_created ON ai_cache(created_at);
+
         CREATE TABLE IF NOT EXISTS ai_runs (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             device_id TEXT,
@@ -268,20 +267,6 @@ function initializeDatabase() {
             FOREIGN KEY (user_id) REFERENCES users(id)
         );
 
-        CREATE TABLE IF NOT EXISTS aa_consents (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id TEXT NOT NULL,
-            bank_name TEXT NOT NULL,
-            account_mask TEXT,
-            consent_id TEXT UNIQUE,
-            status TEXT DEFAULT 'active',
-            scopes TEXT,
-            linked_at TEXT DEFAULT (datetime('now')),
-            created_at TEXT DEFAULT (datetime('now'))
-            -- Guest/demo users may create AA consents before full registration,
-            -- so no foreign-key constraint is enforced on user_id.
-        );
-
         CREATE TABLE IF NOT EXISTS goals (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             user_id TEXT NOT NULL,
@@ -366,63 +351,210 @@ function initializeDatabase() {
         CREATE INDEX IF NOT EXISTS idx_loans_user ON loans(user_id);
         CREATE INDEX IF NOT EXISTS idx_recurring_user ON recurring_payments(user_id);
         CREATE INDEX IF NOT EXISTS idx_audit_user ON audit_logs(user_id, created_at);
+        CREATE INDEX IF NOT EXISTS idx_users_search ON users(name, email);
+        CREATE INDEX IF NOT EXISTS idx_users_created ON users(created_at);
+        CREATE INDEX IF NOT EXISTS idx_audit_created ON audit_logs(created_at);
 
-        -- SecureWealth Twin: real device fingerprinting
-        CREATE TABLE IF NOT EXISTS device_fingerprints (
+        CREATE TABLE IF NOT EXISTS whitelisted_ips (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id TEXT NOT NULL,
-            visitor_id TEXT NOT NULL,
-            fingerprint_hash TEXT NOT NULL,
-            first_seen TEXT DEFAULT (datetime('now')),
-            last_seen TEXT DEFAULT (datetime('now')),
-            is_trusted INTEGER DEFAULT 0,
-            created_at TEXT DEFAULT (datetime('now')),
-            FOREIGN KEY (user_id) REFERENCES users(id)
-        );
-
-        CREATE INDEX IF NOT EXISTS idx_device_fingerprints_user ON device_fingerprints(user_id);
-        CREATE UNIQUE INDEX IF NOT EXISTS idx_device_fingerprints_visitor ON device_fingerprints(user_id, visitor_id);
-
-        -- OTP attempts table (email-based OTP flow)
-        CREATE TABLE IF NOT EXISTS otp_attempts (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            recipient TEXT NOT NULL,
-            otp_hash TEXT NOT NULL,
-            purpose TEXT NOT NULL DEFAULT 'secure transaction',
-            attempts INTEGER DEFAULT 0,
-            expires_at TEXT NOT NULL,
-            verified INTEGER DEFAULT 0,
+            ip TEXT UNIQUE NOT NULL,
             created_at TEXT DEFAULT (datetime('now'))
         );
 
-        CREATE INDEX IF NOT EXISTS idx_otp_recipient ON otp_attempts(recipient, purpose, expires_at);
-        CREATE INDEX IF NOT EXISTS idx_otp_expires ON otp_attempts(expires_at);
-    `);
+        CREATE TABLE IF NOT EXISTS fraud_event_actions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            audit_log_id INTEGER NOT NULL,
+            action TEXT NOT NULL,
+            admin_id TEXT,
+            created_at TEXT DEFAULT (datetime('now')),
+            FOREIGN KEY (audit_log_id) REFERENCES audit_logs(id)
+        );
 
-    // Migration: remove legacy foreign-key constraint from aa_consents
-    try {
-        const aaFkInfo = db.prepare("PRAGMA foreign_key_list('aa_consents')").all();
-        if (aaFkInfo.length > 0) {
-            db.prepare('PRAGMA foreign_keys = OFF').run();
-            db.prepare(`CREATE TABLE IF NOT EXISTS aa_consents_new (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                user_id TEXT NOT NULL,
-                bank_name TEXT NOT NULL,
-                account_mask TEXT,
-                consent_id TEXT UNIQUE,
-                status TEXT DEFAULT 'active',
-                scopes TEXT,
-                linked_at TEXT DEFAULT (datetime('now')),
-                created_at TEXT DEFAULT (datetime('now'))
-            )`).run();
-            db.prepare(`INSERT INTO aa_consents_new SELECT * FROM aa_consents`).run();
-            db.prepare(`DROP TABLE aa_consents`).run();
-            db.prepare(`ALTER TABLE aa_consents_new RENAME TO aa_consents`).run();
-            db.prepare('PRAGMA foreign_keys = ON').run();
-        }
-    } catch (migrationErr) {
-        console.warn('AA consents migration skipped:', migrationErr.message);
-    }
+        -- Fraud Intelligence Center tables
+        CREATE TABLE IF NOT EXISTS fraud_cases (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            case_ref TEXT UNIQUE NOT NULL,
+            audit_log_id INTEGER,
+            user_id TEXT,
+            status TEXT DEFAULT 'open',
+            priority TEXT DEFAULT 'medium',
+            risk_score REAL DEFAULT 0,
+            risk_factors TEXT,
+            category TEXT,
+            summary TEXT,
+            source_entity_type TEXT,
+            source_entity_id INTEGER,
+            assigned_admin_id TEXT,
+            country_risk_tags TEXT,
+            created_at TEXT DEFAULT (datetime('now')),
+            updated_at TEXT DEFAULT (datetime('now')),
+            FOREIGN KEY (audit_log_id) REFERENCES audit_logs(id),
+            FOREIGN KEY (user_id) REFERENCES users(id)
+        );
+
+        CREATE TABLE IF NOT EXISTS fraud_hops (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            fraud_case_id INTEGER NOT NULL,
+            hop_number INTEGER NOT NULL,
+            hop_type TEXT NOT NULL,
+            node_name TEXT,
+            country TEXT,
+            city TEXT,
+            lat REAL,
+            lon REAL,
+            entity_type TEXT,
+            entity_value TEXT,
+            institution TEXT,
+            ifsc TEXT,
+            swift_bic TEXT,
+            amount REAL,
+            currency TEXT DEFAULT 'INR',
+            timestamp TEXT DEFAULT (datetime('now')),
+            evidence_json TEXT,
+            confidence REAL DEFAULT 0,
+            is_sanctioned INTEGER DEFAULT 0,
+            FOREIGN KEY (fraud_case_id) REFERENCES fraud_cases(id) ON DELETE CASCADE
+        );
+
+        CREATE TABLE IF NOT EXISTS fraud_accounts (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            fraud_case_id INTEGER NOT NULL,
+            account_type TEXT NOT NULL,
+            holder_name TEXT,
+            bank_name TEXT,
+            branch TEXT,
+            masked_account TEXT,
+            ifsc TEXT,
+            swift_bic TEXT,
+            country TEXT,
+            risk_flags TEXT,
+            FOREIGN KEY (fraud_case_id) REFERENCES fraud_cases(id) ON DELETE CASCADE
+        );
+
+        CREATE TABLE IF NOT EXISTS fraud_notes (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            fraud_case_id INTEGER NOT NULL,
+            admin_id TEXT,
+            note TEXT NOT NULL,
+            created_at TEXT DEFAULT (datetime('now')),
+            FOREIGN KEY (fraud_case_id) REFERENCES fraud_cases(id) ON DELETE CASCADE
+        );
+
+        CREATE TABLE IF NOT EXISTS fraud_rules (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            enabled INTEGER DEFAULT 1,
+            condition_json TEXT NOT NULL,
+            action TEXT DEFAULT 'flag',
+            severity TEXT DEFAULT 'medium',
+            created_by TEXT,
+            created_at TEXT DEFAULT (datetime('now'))
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_fraud_cases_ref ON fraud_cases(case_ref);
+        CREATE INDEX IF NOT EXISTS idx_fraud_cases_user ON fraud_cases(user_id);
+        CREATE INDEX IF NOT EXISTS idx_fraud_cases_status ON fraud_cases(status);
+        CREATE INDEX IF NOT EXISTS idx_fraud_cases_priority ON fraud_cases(priority);
+        CREATE INDEX IF NOT EXISTS idx_fraud_cases_created ON fraud_cases(created_at);
+        CREATE INDEX IF NOT EXISTS idx_fraud_hops_case ON fraud_hops(fraud_case_id);
+        CREATE INDEX IF NOT EXISTS idx_fraud_accounts_case ON fraud_accounts(fraud_case_id);
+        CREATE INDEX IF NOT EXISTS idx_fraud_notes_case ON fraud_notes(fraud_case_id);
+
+        -- MSME CreditBridge AI tables
+        CREATE TABLE IF NOT EXISTS msme_applications (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id TEXT NOT NULL,
+            application_ref TEXT UNIQUE NOT NULL,
+            business_name TEXT NOT NULL,
+            udyam_number TEXT,
+            gstin TEXT,
+            pan_number TEXT,
+            aadhaar_masked TEXT,
+            enterprise_type TEXT DEFAULT 'micro',
+            annual_turnover REAL DEFAULT 0,
+            employees INTEGER DEFAULT 0,
+            requested_amount REAL NOT NULL,
+            requested_tenure INTEGER NOT NULL,
+            purpose TEXT,
+            consent_gst INTEGER DEFAULT 0,
+            consent_aa INTEGER DEFAULT 0,
+            consent_upi INTEGER DEFAULT 0,
+            status TEXT DEFAULT 'scoring',
+            decision TEXT,
+            decision_reason TEXT,
+            scored_at TEXT,
+            created_at TEXT DEFAULT (datetime('now')),
+            updated_at TEXT DEFAULT (datetime('now')),
+            FOREIGN KEY (user_id) REFERENCES users(id)
+        );
+
+        CREATE TABLE IF NOT EXISTS msme_credit_scores (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            application_id INTEGER NOT NULL UNIQUE,
+            score INTEGER NOT NULL,
+            category TEXT NOT NULL,
+            factors_json TEXT NOT NULL,
+            eli5 TEXT,
+            recommendations_json TEXT,
+            fraud_signals_json TEXT,
+            created_at TEXT DEFAULT (datetime('now')),
+            FOREIGN KEY (application_id) REFERENCES msme_applications(id) ON DELETE CASCADE
+        );
+
+        CREATE TABLE IF NOT EXISTS msme_documents (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            application_id INTEGER NOT NULL,
+            doc_type TEXT NOT NULL,
+            file_name TEXT,
+            storage_path TEXT,
+            verification_status TEXT DEFAULT 'pending',
+            created_at TEXT DEFAULT (datetime('now')),
+            FOREIGN KEY (application_id) REFERENCES msme_applications(id) ON DELETE CASCADE
+        );
+
+        CREATE TABLE IF NOT EXISTS msme_offers (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            application_id INTEGER NOT NULL,
+            offer_type TEXT NOT NULL DEFAULT 'primary',
+            principal_amount REAL NOT NULL,
+            interest_rate REAL NOT NULL,
+            tenure_months INTEGER NOT NULL,
+            emi_amount REAL NOT NULL,
+            total_interest REAL NOT NULL,
+            total_repayment REAL NOT NULL,
+            processing_fee REAL DEFAULT 0,
+            gst_on_fees REAL DEFAULT 0,
+            cgtmse_applicable INTEGER DEFAULT 0,
+            cgtmse_guarantee_percent REAL DEFAULT 0,
+            cgtmse_guaranteed_amount REAL DEFAULT 0,
+            collateral_required INTEGER DEFAULT 0,
+            conditions_json TEXT,
+            status TEXT DEFAULT 'offered',
+            accepted_at TEXT,
+            created_at TEXT DEFAULT (datetime('now')),
+            FOREIGN KEY (application_id) REFERENCES msme_applications(id) ON DELETE CASCADE
+        );
+
+        CREATE TABLE IF NOT EXISTS msme_audit_logs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            application_id INTEGER NOT NULL,
+            user_id TEXT NOT NULL,
+            action TEXT NOT NULL,
+            details_json TEXT,
+            created_at TEXT DEFAULT (datetime('now')),
+            FOREIGN KEY (application_id) REFERENCES msme_applications(id) ON DELETE CASCADE,
+            FOREIGN KEY (user_id) REFERENCES users(id)
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_msme_applications_user ON msme_applications(user_id);
+        CREATE INDEX IF NOT EXISTS idx_msme_applications_status ON msme_applications(status);
+        CREATE INDEX IF NOT EXISTS idx_msme_applications_ref ON msme_applications(application_ref);
+        CREATE INDEX IF NOT EXISTS idx_msme_applications_created ON msme_applications(created_at);
+        CREATE INDEX IF NOT EXISTS idx_msme_scores_app ON msme_credit_scores(application_id);
+        CREATE INDEX IF NOT EXISTS idx_msme_documents_app ON msme_documents(application_id);
+        CREATE INDEX IF NOT EXISTS idx_msme_offers_app ON msme_offers(application_id);
+        CREATE INDEX IF NOT EXISTS idx_msme_audit_app ON msme_audit_logs(application_id);
+    `);
 
     // Migration: add face_descriptor column for biometric login
     try {
@@ -440,84 +572,7 @@ function initializeDatabase() {
         // Column likely already exists
     }
 
-    // Phase 1: Account Aggregator mock tables (PSB-only demo)
-    try {
-        db.exec(`
-            CREATE TABLE IF NOT EXISTS aa_accounts (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                consent_id INTEGER NOT NULL,
-                user_id TEXT NOT NULL,
-                account_id TEXT UNIQUE NOT NULL,
-                account_number_masked TEXT,
-                account_type TEXT,
-                bank_name TEXT,
-                currency TEXT DEFAULT 'INR',
-                balance REAL DEFAULT 0,
-                status TEXT DEFAULT 'active',
-                discovered_at TEXT DEFAULT (datetime('now'))
-            );
-            CREATE INDEX IF NOT EXISTS idx_aa_accounts_consent ON aa_accounts(consent_id);
-            CREATE INDEX IF NOT EXISTS idx_aa_accounts_user ON aa_accounts(user_id);
-
-            CREATE TABLE IF NOT EXISTS aa_transactions (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                account_id TEXT NOT NULL,
-                txn_id TEXT UNIQUE NOT NULL,
-                txn_date TEXT,
-                description TEXT,
-                amount REAL,
-                type TEXT,
-                category TEXT,
-                balance_after REAL,
-                created_at TEXT DEFAULT (datetime('now'))
-            );
-            CREATE INDEX IF NOT EXISTS idx_aa_transactions_account ON aa_transactions(account_id, txn_date);
-        `);
-        console.log('Migration applied: aa_accounts / aa_transactions tables ready');
-    } catch (e) {
-        console.warn('AA tables migration skipped:', e.message);
-    }
-
-    // Migration: add SETU AA tracking columns to aa_consents
-    try {
-        db.exec(`ALTER TABLE aa_consents ADD COLUMN setu_request_id TEXT`);
-        console.log('Migration applied: added setu_request_id column');
-    } catch (e) { /* column likely exists */ }
-    try {
-        db.exec(`ALTER TABLE aa_consents ADD COLUMN setu_consent_url TEXT`);
-        console.log('Migration applied: added setu_consent_url column');
-    } catch (e) { /* column likely exists */ }
-    try {
-        db.exec(`ALTER TABLE aa_consents ADD COLUMN setu_status TEXT`);
-        console.log('Migration applied: added setu_status column');
-    } catch (e) { /* column likely exists */ }
-
     console.log('SQLite database initialized');
-
-    if (pgAdapter.isEnabled()) {
-        readyPromise = (async () => {
-            const maxRetries = 5;
-            const delayMs = 3000;
-            for (let attempt = 1; attempt <= maxRetries; attempt++) {
-                try {
-                    console.log(`DATABASE_URL detected; enabling PostgreSQL persistence adapter (attempt ${attempt}/${maxRetries})...`);
-                    await pgAdapter.ensureSchema();
-                    await pgAdapter.loadFromPostgres(db);
-                    pgAdapter.installTriggers(db);
-                    pgAdapter.startAutoFlush(db);
-                    console.log('PostgreSQL persistence adapter ready.');
-                    return;
-                } catch (err) {
-                    console.error(`PostgreSQL persistence adapter attempt ${attempt} failed:`, err.message);
-                    if (attempt === maxRetries) {
-                        console.error('Falling back to SQLite-only mode. Data will NOT persist across redeploys.');
-                        return;
-                    }
-                    await new Promise((r) => setTimeout(r, delayMs));
-                }
-            }
-        })();
-    }
 }
 
 const userDb = {
@@ -602,236 +657,6 @@ const sessionDb = {
 
 initializeDatabase();
 
-// MSME CreditBridge AI tables
-db.exec(`
-    CREATE TABLE IF NOT EXISTS msme_applications (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        user_id TEXT NOT NULL,
-        application_ref TEXT UNIQUE NOT NULL,
-        business_name TEXT NOT NULL,
-        udyam_number TEXT,
-        gstin TEXT,
-        pan_number TEXT,
-        aadhaar_masked TEXT,
-        enterprise_type TEXT DEFAULT 'micro',
-        annual_turnover REAL DEFAULT 0,
-        employees INTEGER DEFAULT 0,
-        requested_amount REAL NOT NULL,
-        requested_tenure INTEGER NOT NULL,
-        purpose TEXT,
-        consent_gst INTEGER DEFAULT 0,
-        consent_aa INTEGER DEFAULT 0,
-        consent_upi INTEGER DEFAULT 0,
-        status TEXT DEFAULT 'scoring',
-        decision TEXT,
-        decision_reason TEXT,
-        scored_at TEXT,
-        created_at TEXT DEFAULT (datetime('now')),
-        updated_at TEXT DEFAULT (datetime('now')),
-        FOREIGN KEY (user_id) REFERENCES users(id)
-    );
-
-    CREATE TABLE IF NOT EXISTS msme_credit_scores (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        application_id INTEGER NOT NULL UNIQUE,
-        score INTEGER NOT NULL,
-        category TEXT NOT NULL,
-        factors_json TEXT NOT NULL,
-        eli5 TEXT,
-        recommendations_json TEXT,
-        fraud_signals_json TEXT,
-        created_at TEXT DEFAULT (datetime('now')),
-        FOREIGN KEY (application_id) REFERENCES msme_applications(id) ON DELETE CASCADE
-    );
-
-    CREATE TABLE IF NOT EXISTS msme_documents (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        application_id INTEGER NOT NULL,
-        doc_type TEXT NOT NULL,
-        file_name TEXT,
-        storage_path TEXT,
-        verification_status TEXT DEFAULT 'pending',
-        created_at TEXT DEFAULT (datetime('now')),
-        FOREIGN KEY (application_id) REFERENCES msme_applications(id) ON DELETE CASCADE
-    );
-
-    CREATE TABLE IF NOT EXISTS msme_offers (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        application_id INTEGER NOT NULL,
-        offer_type TEXT NOT NULL DEFAULT 'primary',
-        principal_amount REAL NOT NULL,
-        interest_rate REAL NOT NULL,
-        tenure_months INTEGER NOT NULL,
-        emi_amount REAL NOT NULL,
-        total_interest REAL NOT NULL,
-        total_repayment REAL NOT NULL,
-        processing_fee REAL DEFAULT 0,
-        gst_on_fees REAL DEFAULT 0,
-        cgtmse_applicable INTEGER DEFAULT 0,
-        cgtmse_guarantee_percent REAL DEFAULT 0,
-        cgtmse_guaranteed_amount REAL DEFAULT 0,
-        collateral_required INTEGER DEFAULT 0,
-        conditions_json TEXT,
-        status TEXT DEFAULT 'offered',
-        accepted_at TEXT,
-        created_at TEXT DEFAULT (datetime('now')),
-        FOREIGN KEY (application_id) REFERENCES msme_applications(id) ON DELETE CASCADE
-    );
-
-    CREATE TABLE IF NOT EXISTS msme_audit_logs (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        application_id INTEGER NOT NULL,
-        user_id TEXT NOT NULL,
-        action TEXT NOT NULL,
-        details_json TEXT,
-        created_at TEXT DEFAULT (datetime('now')),
-        FOREIGN KEY (application_id) REFERENCES msme_applications(id) ON DELETE CASCADE,
-        FOREIGN KEY (user_id) REFERENCES users(id)
-    );
-
-    CREATE INDEX IF NOT EXISTS idx_msme_applications_user ON msme_applications(user_id);
-    CREATE INDEX IF NOT EXISTS idx_msme_applications_status ON msme_applications(status);
-    CREATE INDEX IF NOT EXISTS idx_msme_applications_ref ON msme_applications(application_ref);
-    CREATE INDEX IF NOT EXISTS idx_msme_applications_created ON msme_applications(created_at);
-    CREATE INDEX IF NOT EXISTS idx_msme_scores_app ON msme_credit_scores(application_id);
-    CREATE INDEX IF NOT EXISTS idx_msme_documents_app ON msme_documents(application_id);
-    CREATE INDEX IF NOT EXISTS idx_msme_offers_app ON msme_offers(application_id);
-    CREATE INDEX IF NOT EXISTS idx_msme_audit_app ON msme_audit_logs(application_id);
-`);
-
-function safeJsonParse(value, fallback) {
-    try {
-        return value ? JSON.parse(value) : fallback;
-    } catch {
-        return fallback;
-    }
-}
-
-const msmeDb = {
-    createApplication: (data) => {
-        const stmt = db.prepare(`INSERT INTO msme_applications
-            (user_id, application_ref, business_name, udyam_number, gstin, pan_number, aadhaar_masked, enterprise_type,
-             annual_turnover, employees, requested_amount, requested_tenure, purpose,
-             consent_gst, consent_aa, consent_upi, status, decision, decision_reason, scored_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
-        return stmt.run(
-            data.userId, data.applicationRef, data.businessName, data.udyamNumber || null,
-            data.gstin || null, data.panNumber || null, data.aadhaarMasked || null,
-            data.enterpriseType || 'micro', data.annualTurnover || 0, data.employees || 0,
-            data.requestedAmount, data.requestedTenure, data.purpose || null,
-            data.consentGst ? 1 : 0, data.consentAa ? 1 : 0, data.consentUpi ? 1 : 0,
-            data.status || 'scoring', data.decision || null, data.decisionReason || null,
-            data.scoredAt || null
-        );
-    },
-    getApplicationById: (id) => {
-        const row = db.prepare('SELECT * FROM msme_applications WHERE id = ?').get(id);
-        if (!row) return null;
-        return {
-            ...row,
-            consentGst: !!row.consent_gst,
-            consentAa: !!row.consent_aa,
-            consentUpi: !!row.consent_upi,
-            cgtmseApplicable: false,
-        };
-    },
-    getApplicationsByUser: (userId, limit = 50) => {
-        return db.prepare('SELECT * FROM msme_applications WHERE user_id = ? ORDER BY created_at DESC LIMIT ?').all(userId, limit);
-    },
-    getApplications: (filters = {}) => {
-        let sql = `SELECT a.*, u.name AS user_name, u.email AS user_email FROM msme_applications a LEFT JOIN users u ON a.user_id = u.id WHERE 1=1`;
-        const params = [];
-        if (filters.status) { sql += ' AND a.status = ?'; params.push(filters.status); }
-        if (filters.decision) { sql += ' AND a.decision = ?'; params.push(filters.decision); }
-        if (filters.userId) { sql += ' AND a.user_id = ?'; params.push(filters.userId); }
-        if (filters.q) {
-            sql += ` AND (a.application_ref LIKE ? OR a.business_name LIKE ? OR u.name LIKE ? OR u.email LIKE ?)`;
-            const like = `%${filters.q}%`;
-            params.push(like, like, like, like);
-        }
-        const countRow = db.prepare(`SELECT COUNT(*) as total FROM msme_applications a LEFT JOIN users u ON a.user_id = u.id WHERE 1=1 ${sql.split('WHERE 1=1')[1] || ''}`).get(...params);
-        const allowedSort = ['created_at', 'updated_at', 'requested_amount'].includes(filters.sort) ? filters.sort : 'created_at';
-        const dir = filters.order && filters.order.toLowerCase() === 'asc' ? 'ASC' : 'DESC';
-        sql += ` ORDER BY a.${allowedSort} ${dir}`;
-        const page = Math.max(1, parseInt(filters.page) || 1);
-        const limit = Math.max(1, Math.min(500, parseInt(filters.limit) || 50));
-        const offset = (page - 1) * limit;
-        sql += ' LIMIT ? OFFSET ?';
-        const rows = db.prepare(sql).all(...params, limit, offset);
-        return { applications: rows, total: countRow.total, page, limit, pages: Math.ceil(countRow.total / limit) };
-    },
-    updateApplication: (id, data) => {
-        const stmt = db.prepare(`UPDATE msme_applications SET
-            status = COALESCE(?, status),
-            decision = COALESCE(?, decision),
-            decision_reason = COALESCE(?, decision_reason),
-            scored_at = COALESCE(?, scored_at),
-            updated_at = datetime('now')
-            WHERE id = ?`);
-        return stmt.run(data.status || null, data.decision || null, data.decisionReason || null, data.scoredAt || null, id);
-    },
-    deleteApplication: (id) => db.prepare('DELETE FROM msme_applications WHERE id = ?').run(id),
-
-    createScore: (data) => {
-        const stmt = db.prepare(`INSERT INTO msme_credit_scores
-            (application_id, score, category, factors_json, eli5, recommendations_json, fraud_signals_json)
-            VALUES (?, ?, ?, ?, ?, ?, ?)`);
-        return stmt.run(
-            data.applicationId, data.score, data.category,
-            JSON.stringify(data.factors || []),
-            data.eli5 || null,
-            JSON.stringify(data.recommendations || []),
-            JSON.stringify(data.fraudSignals || [])
-        );
-    },
-    getScoreByApplication: (applicationId) => {
-        const row = db.prepare('SELECT * FROM msme_credit_scores WHERE application_id = ?').get(applicationId);
-        if (!row) return null;
-        return {
-            ...row,
-            factors: safeJsonParse(row.factors_json, []),
-            recommendations: safeJsonParse(row.recommendations_json, []),
-            fraudSignals: safeJsonParse(row.fraud_signals_json, [])
-        };
-    },
-
-    createDocument: (data) => {
-        const stmt = db.prepare(`INSERT INTO msme_documents (application_id, doc_type, file_name, storage_path, verification_status) VALUES (?, ?, ?, ?, ?)`);
-        return stmt.run(data.applicationId, data.docType, data.fileName || null, data.storagePath || null, data.verificationStatus || 'pending');
-    },
-    getDocumentsByApplication: (applicationId) => db.prepare('SELECT * FROM msme_documents WHERE application_id = ? ORDER BY created_at DESC').all(applicationId),
-
-    createOffer: (data) => {
-        const stmt = db.prepare(`INSERT INTO msme_offers
-            (application_id, offer_type, principal_amount, interest_rate, tenure_months, emi_amount,
-             total_interest, total_repayment, processing_fee, gst_on_fees, cgtmse_applicable,
-             cgtmse_guarantee_percent, cgtmse_guaranteed_amount, collateral_required, conditions_json)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
-        return stmt.run(
-            data.applicationId, data.offerType || 'primary', data.principalAmount, data.interestRate,
-            data.tenureMonths, data.emiAmount, data.totalInterest, data.totalRepayment,
-            data.processingFee || 0, data.gstOnFees || 0, data.cgtmseApplicable ? 1 : 0,
-            data.cgtmseGuaranteePercent || 0, data.cgtmseGuaranteedAmount || 0,
-            data.collateralRequired ? 1 : 0, data.conditions ? JSON.stringify(data.conditions) : null
-        );
-    },
-    getOffersByApplication: (applicationId) => {
-        return db.prepare('SELECT * FROM msme_offers WHERE application_id = ? ORDER BY created_at DESC').all(applicationId).map(o => ({
-            ...o,
-            cgtmseApplicable: !!o.cgtmse_applicable,
-            collateralRequired: !!o.collateral_required,
-            conditions: safeJsonParse(o.conditions_json, [])
-        }));
-    },
-    acceptOffer: (offerId) => db.prepare("UPDATE msme_offers SET status = 'accepted', accepted_at = datetime('now') WHERE id = ?").run(offerId),
-
-    createAuditLog: (data) => {
-        const stmt = db.prepare(`INSERT INTO msme_audit_logs (application_id, user_id, action, details_json) VALUES (?, ?, ?, ?)`);
-        return stmt.run(data.applicationId, data.userId, data.action, JSON.stringify(data.details || {}));
-    },
-    getAuditLogsByApplication: (applicationId) => db.prepare('SELECT * FROM msme_audit_logs WHERE application_id = ? ORDER BY created_at DESC').all(applicationId).map(l => ({ ...l, details: safeJsonParse(l.details_json, {}) }))
-};
-
 const aiRunsDb = {
     create: (run) => {
         const stmt = db.prepare(`INSERT INTO ai_runs (device_id, task, provider, model, input_tokens, output_tokens, latency_ms, cost_usd_estimate, success, error_message) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
@@ -854,8 +679,6 @@ const quotaDb = {
         return row;
     },
     increment: (task) => {
-        const allowed = new Set(['extract', 'chat', 'explain', 'memo']);
-        if (!allowed.has(task)) throw new Error('Invalid quota task');
         const col = task + '_used';
         const stmt = db.prepare(`UPDATE server_quota SET ${col} = ${col} + 1, updated_at = datetime('now') WHERE id = 1`);
         return stmt.run();
@@ -889,8 +712,6 @@ const deviceDb = {
         return row;
     },
     increment: (deviceId, task) => {
-        const allowed = new Set(['extract', 'chat', 'explain', 'memo']);
-        if (!allowed.has(task)) throw new Error('Invalid device quota task');
         const col = task + '_count_today';
         const stmt = db.prepare(`UPDATE device_ids SET ${col} = ${col} + 1 WHERE device_id = ?`);
         return stmt.run(deviceId);
@@ -1108,6 +929,120 @@ const bankingDb = {
     getAuditLogsByUser: (userId, limit = 100) => {
         return db.prepare('SELECT * FROM audit_logs WHERE user_id = ? ORDER BY created_at DESC LIMIT ?').all(userId, limit);
     },
+    getAllAuditLogs: (filters = {}) => {
+        let sql = `SELECT a.*, u.name AS user_name, u.email AS user_email FROM audit_logs a LEFT JOIN users u ON a.user_id = u.id WHERE 1=1`;
+        const params = [];
+        if (filters.userId) { sql += ' AND a.user_id = ?'; params.push(filters.userId); }
+        if (filters.action) { sql += ' AND a.action = ?'; params.push(filters.action); }
+        if (filters.entityType) { sql += ' AND a.entity_type = ?'; params.push(filters.entityType); }
+        if (filters.dateFrom) { sql += ' AND a.created_at >= ?'; params.push(filters.dateFrom); }
+        if (filters.dateTo) { sql += ' AND a.created_at <= ?'; params.push(filters.dateTo); }
+        sql += ' ORDER BY a.created_at DESC';
+        if (filters.limit) { sql += ' LIMIT ?'; params.push(filters.limit); }
+        if (filters.offset) { sql += ' OFFSET ?'; params.push(filters.offset); }
+        return db.prepare(sql).all(...params);
+    },
+    getFraudEvents: (limit = 100) => {
+        const sql = `SELECT a.*, u.name AS user_name, u.email AS user_email FROM audit_logs a LEFT JOIN users u ON a.user_id = u.id WHERE (a.action = 'DELETE' OR a.entity_type IN ('auth', 'transaction', 'card', 'kyc')) AND a.new_value LIKE '%"status":4%' ORDER BY a.created_at DESC LIMIT ?`;
+        return db.prepare(sql).all(limit);
+    },
+    blockUser: (userId) => {
+        return db.prepare(`UPDATE users SET is_active = 0 WHERE id = ?`).run(userId);
+    },
+    whitelistIp: (ip) => {
+        try {
+            return db.prepare(`INSERT OR IGNORE INTO whitelisted_ips (ip) VALUES (?)`).run(ip);
+        } catch (e) {
+            return { changes: 0 };
+        }
+    },
+    isIpWhitelisted: (ip) => {
+        return db.prepare(`SELECT COUNT(*) as count FROM whitelisted_ips WHERE ip = ?`).get(ip).count > 0;
+    },
+    markFalsePositive: (auditLogId, adminId = null) => {
+        return db.prepare(`INSERT INTO fraud_event_actions (audit_log_id, action, admin_id) VALUES (?, 'false_positive', ?)`).run(auditLogId, adminId);
+    },
+    acknowledgeFraudEvent: (auditLogId, adminId = null) => {
+        return db.prepare(`INSERT INTO fraud_event_actions (audit_log_id, action, admin_id) VALUES (?, 'acknowledge', ?)`).run(auditLogId, adminId);
+    },
+    getUsers: ({ q = '', sort = 'created_at', order = 'desc', page = 1, limit = 50 } = {}) => {
+        const allowedSort = ['name', 'email', 'created_at', 'tier', 'role'].includes(sort) ? sort : 'created_at';
+        const dir = order.toLowerCase() === 'asc' ? 'ASC' : 'DESC';
+        const offset = Math.max(0, (page - 1) * limit);
+        let where = 'WHERE 1=1';
+        const params = [];
+        if (q) {
+            where += ' AND (name LIKE ? OR email LIKE ? OR phone LIKE ? OR pan_number LIKE ? OR aadhar LIKE ?)';
+            const like = `%${q}%`;
+            params.push(like, like, like, like, like);
+        }
+        const countRow = db.prepare(`SELECT COUNT(*) as total FROM users ${where}`).get(...params);
+        const sql = `SELECT id, email, name, phone, role, tier, pan_number, aadhar, created_at, last_login, face_descriptor IS NOT NULL as face_registered, api_usage_total, is_active FROM users ${where} ORDER BY ${allowedSort} ${dir} LIMIT ? OFFSET ?`;
+        const users = db.prepare(sql).all(...params, limit, offset).map(u => ({
+            ...u,
+            email: maskEmail(u.email),
+            phone: maskPhone(u.phone),
+            pan_number: maskPan(u.pan_number),
+            aadhar: maskAadhaar(u.aadhar)
+        }));
+        return { users, total: countRow.total, page, limit, pages: Math.ceil(countRow.total / limit) };
+    },
+    updateUserStatus: (userId, isActive) => {
+        return db.prepare(`UPDATE users SET is_active = ? WHERE id = ?`).run(isActive ? 1 : 0, userId);
+    },
+    updateUser: (userId, { role, tier }) => {
+        const stmt = db.prepare(`UPDATE users SET role = COALESCE(?, role), tier = COALESCE(?, tier) WHERE id = ?`);
+        return stmt.run(role, tier, userId);
+    },
+    getAuditLogsPaged: ({ userId, action, entityType, dateFrom, dateTo, q = '', page = 1, limit = 100 } = {}) => {
+        let sql = `SELECT a.*, u.name AS user_name, u.email AS user_email FROM audit_logs a LEFT JOIN users u ON a.user_id = u.id WHERE 1=1`;
+        const params = [];
+        if (userId) { sql += ' AND a.user_id = ?'; params.push(userId); }
+        if (action) { sql += ' AND a.action = ?'; params.push(action); }
+        if (entityType) { sql += ' AND a.entity_type = ?'; params.push(entityType); }
+        if (dateFrom) { sql += ' AND a.created_at >= ?'; params.push(dateFrom); }
+        if (dateTo) { sql += ' AND a.created_at <= ?'; params.push(dateTo); }
+        if (q) {
+            sql += ' AND (a.action LIKE ? OR a.entity_type LIKE ? OR a.details LIKE ? OR u.name LIKE ? OR u.email LIKE ? OR a.ip_address LIKE ?)';
+            const like = `%${q}%`;
+            params.push(like, like, like, like, like, like);
+        }
+        const countRow = db.prepare(`SELECT COUNT(*) as total FROM audit_logs a LEFT JOIN users u ON a.user_id = u.id WHERE 1=1 ${sql.split('WHERE 1=1')[1] || ''}`).get(...params);
+        sql += ' ORDER BY a.created_at DESC LIMIT ? OFFSET ?';
+        const offset = Math.max(0, (page - 1) * limit);
+        const logs = db.prepare(sql).all(...params, limit, offset);
+        return { logs, total: countRow.total, page, limit, pages: Math.ceil(countRow.total / limit) };
+    },
+    getDashboardMetrics: (days = 7) => {
+        const dayMs = 86400000;
+        const now = new Date();
+        const registrations = [];
+        const transactions = [];
+        const fraudTrends = [];
+        for (let i = days - 1; i >= 0; i--) {
+            const d = new Date(now.getTime() - i * dayMs);
+            const dateStr = d.toISOString().split('T')[0];
+            const nextStr = new Date(d.getTime() + dayMs).toISOString().split('T')[0];
+            const reg = db.prepare(`SELECT COUNT(*) as count FROM users WHERE created_at >= ? AND created_at < ?`).get(dateStr, nextStr);
+            const txn = db.prepare(`SELECT COUNT(*) as count FROM transactions WHERE created_at >= ? AND created_at < ?`).get(dateStr, nextStr);
+            const fraud = db.prepare(`SELECT COUNT(*) as count FROM audit_logs WHERE created_at >= ? AND created_at < ? AND (action = 'DELETE' OR entity_type IN ('auth', 'transaction', 'card', 'kyc')) AND new_value LIKE '%"status":4%'`).get(dateStr, nextStr);
+            const label = d.toLocaleDateString('en-IN', { weekday: 'short' });
+            registrations.push({ day: label, users: reg.count });
+            transactions.push({ day: label, txns: txn.count });
+            fraudTrends.push({ day: label, attempts: fraud.count, blocked: Math.floor(fraud.count * 0.85) });
+        }
+        const tierRows = db.prepare(`SELECT tier, COUNT(*) as count FROM users GROUP BY tier`).all();
+        const tierMap = { free: 0, premium: 0, enterprise: 0 };
+        tierRows.forEach(r => { tierMap[r.tier] = r.count; });
+        const tierDistribution = [
+            { name: 'Free', value: tierMap.free || 0, color: '#64748b' },
+            { name: 'Premium', value: tierMap.premium || 0, color: '#fbbf24' },
+            { name: 'Enterprise', value: tierMap.enterprise || 0, color: '#a78bfa' },
+        ];
+        const originRows = db.prepare(`SELECT COUNT(*) as count, ip_address FROM audit_logs WHERE created_at >= datetime('now', '-7 day') AND (action = 'DELETE' OR entity_type IN ('auth', 'transaction', 'card', 'kyc')) AND new_value LIKE '%"status":4%' GROUP BY ip_address ORDER BY count DESC LIMIT 5`).all();
+        const topOrigins = originRows.map(r => ({ country: r.ip_address, count: r.count }));
+        return { registrations, transactions, fraudTrends, tierDistribution, topOrigins };
+    },
     createAsset: (data) => {
         const stmt = db.prepare(`INSERT INTO user_assets (user_id, name, asset_type, value, liquidity, returns) VALUES (?, ?, ?, ?, ?, ?)`);
         return stmt.run(data.userId, data.name, data.assetType || null, data.value || 0, data.liquidity || null, data.returns || null);
@@ -1133,133 +1068,394 @@ const bankingDb = {
         }
         const stmt = db.prepare(`INSERT INTO kyc_records (user_id, pan_number, aadhaar_masked, kyc_status) VALUES (?, ?, ?, ?)`);
         return stmt.run(data.userId, data.panNumber || null, data.aadhaarMasked || null, data.kycStatus || 'pending');
-    },
-    markKycVerified: (userId, reference) => {
-        const stmt = db.prepare(`UPDATE kyc_records SET kyc_status = 'verified', verified_at = datetime('now'), ekyc_reference = COALESCE(?, ekyc_reference) WHERE user_id = ?`);
-        return stmt.run(reference || null, userId);
-    },
-    getAaConsentsByUser: (userId) => {
-        return db.prepare('SELECT * FROM aa_consents WHERE user_id = ? AND status = ? ORDER BY linked_at DESC').all(userId, 'active');
-    },
-    createAaConsent: (data) => {
-        const existing = db.prepare('SELECT * FROM aa_consents WHERE user_id = ? AND bank_name = ? AND status = ?').get(data.userId, data.bankName, 'active');
-        if (existing) throw new Error('Bank already linked');
-        const stmt = db.prepare(`INSERT INTO aa_consents (user_id, bank_name, account_mask, consent_id, status, scopes, setu_request_id, setu_consent_url, setu_status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`);
-        return stmt.run(data.userId, data.bankName, data.accountMask || null, data.consentId || null, 'active', Array.isArray(data.scopes) ? data.scopes.join(',') : data.scopes || null, data.setuRequestId || null, data.setuConsentUrl || null, data.setuStatus || null);
-    },
-    updateAaConsentSetu: (consentId, userId, setuData) => {
-        const stmt = db.prepare(`UPDATE aa_consents SET setu_request_id = COALESCE(?, setu_request_id), setu_consent_url = COALESCE(?, setu_consent_url), setu_status = COALESCE(?, setu_status), status = COALESCE(?, status) WHERE id = ? AND user_id = ?`);
-        return stmt.run(setuData.setuRequestId || null, setuData.setuConsentUrl || null, setuData.setuStatus || null, setuData.status || null, consentId, userId);
-    },
-    revokeAaConsent: (consentId, userId) => {
-        const stmt = db.prepare(`UPDATE aa_consents SET status = 'revoked' WHERE id = ? AND user_id = ?`);
-        return stmt.run(consentId, userId);
-    },
-    getAaConsentById: (consentId, userId) => {
-        return db.prepare('SELECT * FROM aa_consents WHERE id = ? AND user_id = ?').get(consentId, userId);
-    },
-    getAaConsentBySetuRequestId: (requestId) => {
-        return db.prepare('SELECT * FROM aa_consents WHERE setu_request_id = ?').get(requestId);
-    },
-    getAaAccountsByUser: (userId) => {
-        return db.prepare('SELECT * FROM aa_accounts WHERE user_id = ? AND status = ? ORDER BY discovered_at DESC').all(userId, 'active');
-    },
-    getAaAccountsByConsent: (consentId, userId) => {
-        return db.prepare('SELECT * FROM aa_accounts WHERE consent_id = ? AND user_id = ? AND status = ? ORDER BY discovered_at DESC').all(consentId, userId, 'active');
-    },
-    createAaAccount: (data) => {
-        const stmt = db.prepare(`INSERT INTO aa_accounts (consent_id, user_id, account_id, account_number_masked, account_type, bank_name, currency, balance) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`);
-        return stmt.run(data.consentId, data.userId, data.accountId, data.accountNumberMasked, data.accountType, data.bankName, data.currency || 'INR', data.balance || 0);
-    },
-    deactivateAaAccountsByConsent: (consentId, userId) => {
-        return db.prepare(`UPDATE aa_accounts SET status = 'revoked' WHERE consent_id = ? AND user_id = ?`).run(consentId, userId);
-    },
-    getAaTransactionsByAccount: (accountId) => {
-        return db.prepare('SELECT * FROM aa_transactions WHERE account_id = ? ORDER BY txn_date DESC, id DESC LIMIT 50').all(accountId);
-    },
-    createAaTransaction: (data) => {
-        const stmt = db.prepare(`INSERT INTO aa_transactions (account_id, txn_id, txn_date, description, amount, type, category, balance_after) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`);
-        return stmt.run(data.accountId, data.txnId, data.txnDate, data.description, data.amount, data.type, data.category, data.balanceAfter);
     }
 };
 
-const otpDb = {
-    create: (data) => {
-        const stmt = db.prepare(`INSERT INTO otp_attempts (recipient, otp_hash, purpose, attempts, expires_at, verified) VALUES (?, ?, ?, ?, ?, ?)`);
-        return stmt.run(data.recipient, data.otpHash, data.purpose || 'secure transaction', data.attempts || 0, data.expiresAt, data.verified ? 1 : 0);
+const fraudDb = {
+    createCase: (data) => {
+        const stmt = db.prepare(`INSERT INTO fraud_cases
+            (case_ref, audit_log_id, user_id, status, priority, risk_score, risk_factors, category, summary,
+             source_entity_type, source_entity_id, assigned_admin_id, country_risk_tags)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
+        const result = stmt.run(
+            data.caseRef,
+            data.auditLogId || null,
+            data.userId || null,
+            data.status || 'open',
+            data.priority || 'medium',
+            data.riskScore || 0,
+            data.riskFactors ? JSON.stringify(data.riskFactors) : null,
+            data.category || null,
+            data.summary || null,
+            data.sourceEntityType || null,
+            data.sourceEntityId || null,
+            data.assignedAdminId || null,
+            data.countryRiskTags ? JSON.stringify(data.countryRiskTags) : null
+        );
+        return result;
     },
-    findActiveByRecipient: (recipient, purpose = 'secure transaction') => {
-        return db.prepare(`SELECT * FROM otp_attempts WHERE recipient = ? AND purpose = ? AND expires_at > datetime('now') AND verified = 0 ORDER BY created_at DESC LIMIT 1`).get(recipient, purpose);
+    getCaseById: (id) => db.prepare('SELECT * FROM fraud_cases WHERE id = ?').get(id),
+    getCaseByRef: (caseRef) => db.prepare('SELECT * FROM fraud_cases WHERE case_ref = ?').get(caseRef),
+    getCases: (filters = {}) => {
+        let sql = `SELECT c.*, u.name AS user_name, u.email AS user_email FROM fraud_cases c LEFT JOIN users u ON c.user_id = u.id WHERE 1=1`;
+        const params = [];
+        if (filters.status) { sql += ' AND c.status = ?'; params.push(filters.status); }
+        if (filters.priority) { sql += ' AND c.priority = ?'; params.push(filters.priority); }
+        if (filters.category) { sql += ' AND c.category = ?'; params.push(filters.category); }
+        if (filters.assignedAdminId) { sql += ' AND c.assigned_admin_id = ?'; params.push(filters.assignedAdminId); }
+        if (filters.userId) { sql += ' AND c.user_id = ?'; params.push(filters.userId); }
+        if (filters.dateFrom) { sql += ' AND c.created_at >= ?'; params.push(filters.dateFrom); }
+        if (filters.dateTo) { sql += ' AND c.created_at <= ?'; params.push(filters.dateTo); }
+        if (filters.timeRange && filters.timeRange !== 'all') {
+            const now = new Date().toISOString();
+            let seconds = 0;
+            switch (filters.timeRange) {
+                case 'live': seconds = 60; break;
+                case '7d': seconds = 7 * 24 * 60 * 60; break;
+                case '1m': seconds = 30 * 24 * 60 * 60; break;
+                case '1y': seconds = 365 * 24 * 60 * 60; break;
+                case '10y': seconds = 10 * 365 * 24 * 60 * 60; break;
+            }
+            if (seconds > 0) {
+                sql += " AND c.created_at >= datetime('now', '-" + seconds + " seconds')";
+            }
+        }
+        if (filters.minRisk !== undefined) { sql += ' AND c.risk_score >= ?'; params.push(filters.minRisk); }
+        if (filters.maxRisk !== undefined) { sql += ' AND c.risk_score <= ?'; params.push(filters.maxRisk); }
+        if (filters.q) {
+            sql += ` AND (c.case_ref LIKE ? OR c.summary LIKE ? OR c.category LIKE ? OR u.name LIKE ? OR u.email LIKE ? OR c.country_risk_tags LIKE ?)`;
+            const like = `%${filters.q}%`;
+            params.push(like, like, like, like, like, like);
+        }
+        if (filters.ids && filters.ids.length) {
+            const ph = filters.ids.map(() => '?').join(',');
+            sql += ` AND c.id IN (${ph})`;
+            params.push(...filters.ids);
+        }
+        const countRow = db.prepare(`SELECT COUNT(*) as total FROM fraud_cases c LEFT JOIN users u ON c.user_id = u.id WHERE 1=1 ${sql.split('WHERE 1=1')[1] || ''}`).get(...params);
+        const allowedSort = ['created_at', 'updated_at', 'risk_score', 'priority', 'status'].includes(filters.sort) ? filters.sort : 'created_at';
+        const dir = filters.order && filters.order.toLowerCase() === 'asc' ? 'ASC' : 'DESC';
+        sql += ` ORDER BY c.${allowedSort} ${dir}`;
+        const page = Math.max(1, parseInt(filters.page) || 1);
+        const limit = Math.max(1, Math.min(500, parseInt(filters.limit) || 50));
+        const offset = (page - 1) * limit;
+        sql += ' LIMIT ? OFFSET ?';
+        const cases = db.prepare(sql).all(...params, limit, offset);
+        const casesWithHops = cases.map(c => ({
+            ...c,
+            hops: db.prepare('SELECT * FROM fraud_hops WHERE fraud_case_id = ? ORDER BY hop_number, timestamp').all(c.id).map(h => ({
+                ...h,
+                evidenceJson: safeJsonParse(h.evidence_json, null),
+                isSanctioned: !!h.is_sanctioned
+            }))
+        }));
+        return { cases: casesWithHops, total: countRow.total, page, limit, pages: Math.ceil(countRow.total / limit) };
     },
-    findRecentByRecipient: (recipient, purpose = 'secure transaction', limit = 10) => {
-        return db.prepare(`SELECT * FROM otp_attempts WHERE recipient = ? AND purpose = ? ORDER BY created_at DESC LIMIT ?`).all(recipient, purpose, limit);
+    updateCase: (id, data) => {
+        const stmt = db.prepare(`UPDATE fraud_cases SET
+            status = COALESCE(?, status),
+            priority = COALESCE(?, priority),
+            risk_score = COALESCE(?, risk_score),
+            risk_factors = COALESCE(?, risk_factors),
+            category = COALESCE(?, category),
+            summary = COALESCE(?, summary),
+            assigned_admin_id = COALESCE(?, assigned_admin_id),
+            country_risk_tags = COALESCE(?, country_risk_tags),
+            updated_at = datetime('now')
+            WHERE id = ?`);
+        return stmt.run(
+            data.status || null,
+            data.priority || null,
+            data.riskScore !== undefined ? data.riskScore : null,
+            data.riskFactors ? JSON.stringify(data.riskFactors) : null,
+            data.category || null,
+            data.summary || null,
+            data.assignedAdminId !== undefined ? data.assignedAdminId : null,
+            data.countryRiskTags ? JSON.stringify(data.countryRiskTags) : null,
+            id
+        );
     },
-    incrementAttempts: (id) => {
-        return db.prepare(`UPDATE otp_attempts SET attempts = attempts + 1 WHERE id = ?`).run(id);
+    deleteCase: (id) => db.prepare('DELETE FROM fraud_cases WHERE id = ?').run(id),
+
+    createHop: (data) => {
+        const stmt = db.prepare(`INSERT INTO fraud_hops
+            (fraud_case_id, hop_number, hop_type, node_name, country, city, lat, lon, entity_type,
+             entity_value, institution, ifsc, swift_bic, amount, currency, timestamp, evidence_json, confidence, is_sanctioned)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
+        return stmt.run(
+            data.fraudCaseId, data.hopNumber, data.hopType, data.nodeName || null, data.country || null,
+            data.city || null, data.lat || null, data.lon || null, data.entityType || null,
+            data.entityValue || null, data.institution || null, data.ifsc || null, data.swiftBic || null,
+            data.amount || 0, data.currency || 'INR', data.timestamp || null,
+            data.evidenceJson ? JSON.stringify(data.evidenceJson) : null,
+            data.confidence || 0, data.isSanctioned ? 1 : 0
+        );
     },
-    markVerified: (id) => {
-        return db.prepare(`UPDATE otp_attempts SET verified = 1 WHERE id = ?`).run(id);
+    getHopsByCase: (caseId) => db.prepare('SELECT * FROM fraud_hops WHERE fraud_case_id = ? ORDER BY hop_number, timestamp').all(caseId),
+    updateHop: (id, data) => {
+        const stmt = db.prepare(`UPDATE fraud_hops SET
+            hop_number = COALESCE(?, hop_number), hop_type = COALESCE(?, hop_type), node_name = COALESCE(?, node_name),
+            country = COALESCE(?, country), city = COALESCE(?, city), lat = COALESCE(?, lat), lon = COALESCE(?, lon),
+            entity_type = COALESCE(?, entity_type), entity_value = COALESCE(?, entity_value),
+            institution = COALESCE(?, institution), ifsc = COALESCE(?, ifsc), swift_bic = COALESCE(?, swift_bic),
+            amount = COALESCE(?, amount), currency = COALESCE(?, currency), timestamp = COALESCE(?, timestamp),
+            evidence_json = COALESCE(?, evidence_json), confidence = COALESCE(?, confidence), is_sanctioned = COALESCE(?, is_sanctioned)
+            WHERE id = ?`);
+        return stmt.run(
+            data.hopNumber !== undefined ? data.hopNumber : null,
+            data.hopType || null, data.nodeName || null, data.country || null, data.city || null,
+            data.lat !== undefined ? data.lat : null, data.lon !== undefined ? data.lon : null,
+            data.entityType || null, data.entityValue || null, data.institution || null,
+            data.ifsc || null, data.swiftBic || null, data.amount !== undefined ? data.amount : null,
+            data.currency || null, data.timestamp || null,
+            data.evidenceJson ? JSON.stringify(data.evidenceJson) : null,
+            data.confidence !== undefined ? data.confidence : null,
+            data.isSanctioned !== undefined ? (data.isSanctioned ? 1 : 0) : null,
+            id
+        );
     },
-    invalidateActive: (recipient, purpose = 'secure transaction') => {
-        return db.prepare(`UPDATE otp_attempts SET verified = -1 WHERE recipient = ? AND purpose = ? AND verified = 0 AND expires_at > datetime('now')`).run(recipient, purpose);
+    deleteHop: (id) => db.prepare('DELETE FROM fraud_hops WHERE id = ?').run(id),
+
+    createAccount: (data) => {
+        const stmt = db.prepare(`INSERT INTO fraud_accounts
+            (fraud_case_id, account_type, holder_name, bank_name, branch, masked_account, ifsc, swift_bic, country, risk_flags)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
+        return stmt.run(
+            data.fraudCaseId, data.accountType, data.holderName || null, data.bankName || null,
+            data.branch || null, data.maskedAccount || null, data.ifsc || null, data.swiftBic || null,
+            data.country || null, data.riskFlags ? JSON.stringify(data.riskFlags) : null
+        );
     },
-    cleanupExpired: () => {
-        return db.prepare(`DELETE FROM otp_attempts WHERE expires_at <= datetime('now', '-1 day')`).run();
+    getAccountsByCase: (caseId) => db.prepare('SELECT * FROM fraud_accounts WHERE fraud_case_id = ?').all(caseId),
+    updateAccount: (id, data) => {
+        const stmt = db.prepare(`UPDATE fraud_accounts SET
+            account_type = COALESCE(?, account_type), holder_name = COALESCE(?, holder_name),
+            bank_name = COALESCE(?, bank_name), branch = COALESCE(?, branch),
+            masked_account = COALESCE(?, masked_account), ifsc = COALESCE(?, ifsc),
+            swift_bic = COALESCE(?, swift_bic), country = COALESCE(?, country), risk_flags = COALESCE(?, risk_flags)
+            WHERE id = ?`);
+        return stmt.run(
+            data.accountType || null, data.holderName || null, data.bankName || null, data.branch || null,
+            data.maskedAccount || null, data.ifsc || null, data.swiftBic || null, data.country || null,
+            data.riskFlags ? JSON.stringify(data.riskFlags) : null,
+            id
+        );
     },
-    getAttemptStats: (recipient, purpose = 'secure transaction') => {
-        const row = db.prepare(`SELECT COUNT(*) as total, SUM(attempts) as total_attempts, MAX(attempts) as max_attempts FROM otp_attempts WHERE recipient = ? AND purpose = ? AND created_at > datetime('now', '-1 day')`).get(recipient, purpose);
-        return row || { total: 0, total_attempts: 0, max_attempts: 0 };
+    deleteAccount: (id) => db.prepare('DELETE FROM fraud_accounts WHERE id = ?').run(id),
+
+    createNote: (data) => {
+        const stmt = db.prepare(`INSERT INTO fraud_notes (fraud_case_id, admin_id, note) VALUES (?, ?, ?)`);
+        return stmt.run(data.fraudCaseId, data.adminId || null, data.note);
     },
-    getAttemptsInWindow: (recipient, purpose = 'secure transaction', minutes = 5) => {
-        const row = db.prepare(`SELECT COALESCE(SUM(attempts), 0) as total_attempts FROM otp_attempts WHERE recipient = ? AND purpose = ? AND created_at > datetime('now', '-${minutes} minutes')`).get(recipient, purpose);
-        return row ? Number(row.total_attempts) : 0;
-    }
+    getNotesByCase: (caseId) => db.prepare('SELECT * FROM fraud_notes WHERE fraud_case_id = ? ORDER BY created_at DESC').all(caseId),
+    deleteNote: (id) => db.prepare('DELETE FROM fraud_notes WHERE id = ?').run(id),
+
+    getFullCase: (id) => {
+        const caseRow = db.prepare('SELECT c.*, u.name AS user_name, u.email AS user_email FROM fraud_cases c LEFT JOIN users u ON c.user_id = u.id WHERE c.id = ?').get(id);
+        if (!caseRow) return null;
+        return {
+            ...caseRow,
+            riskFactors: safeJsonParse(caseRow.risk_factors, []),
+            countryRiskTags: safeJsonParse(caseRow.country_risk_tags, []),
+            hops: db.prepare('SELECT * FROM fraud_hops WHERE fraud_case_id = ? ORDER BY hop_number, timestamp').all(id).map(h => ({
+                ...h,
+                evidenceJson: safeJsonParse(h.evidence_json, null),
+                isSanctioned: !!h.is_sanctioned
+            })),
+            accounts: db.prepare('SELECT * FROM fraud_accounts WHERE fraud_case_id = ?').all(id).map(a => ({
+                ...a,
+                riskFlags: safeJsonParse(a.risk_flags, [])
+            })),
+            notes: db.prepare('SELECT * FROM fraud_notes WHERE fraud_case_id = ? ORDER BY created_at DESC').all(id)
+        };
+    },
+
+    getStats: () => {
+        const total = db.prepare('SELECT COUNT(*) as count FROM fraud_cases').get();
+        const byStatus = db.prepare("SELECT status, COUNT(*) as count FROM fraud_cases GROUP BY status").all();
+        const byPriority = db.prepare("SELECT priority, COUNT(*) as count FROM fraud_cases GROUP BY priority").all();
+        const byCategory = db.prepare("SELECT category, COUNT(*) as count FROM fraud_cases GROUP BY category").all();
+        const highRisk = db.prepare("SELECT COUNT(*) as count FROM fraud_cases WHERE risk_score >= 80").get();
+        const sanctioned = db.prepare("SELECT COUNT(DISTINCT fraud_case_id) as count FROM fraud_hops WHERE is_sanctioned = 1").get();
+        const totalAmount = db.prepare("SELECT COALESCE(SUM(amount), 0) as total FROM fraud_hops WHERE currency = 'INR'").get();
+        return {
+            totalCases: total.count,
+            byStatus,
+            byPriority,
+            byCategory,
+            highRiskCases: highRisk.count,
+            sanctionedCases: sanctioned.count,
+            totalInrAmount: totalAmount.total
+        };
+    },
+
+    createRule: (data) => {
+        const stmt = db.prepare(`INSERT INTO fraud_rules (name, enabled, condition_json, action, severity, created_by) VALUES (?, ?, ?, ?, ?, ?)`);
+        return stmt.run(data.name, data.enabled !== false ? 1 : 0, JSON.stringify(data.conditionJson), data.action || 'flag', data.severity || 'medium', data.createdBy || null);
+    },
+    getRules: (filters = {}) => {
+        let sql = 'SELECT * FROM fraud_rules WHERE 1=1';
+        const params = [];
+        if (filters.enabled !== undefined) { sql += ' AND enabled = ?'; params.push(filters.enabled ? 1 : 0); }
+        sql += ' ORDER BY created_at DESC';
+        const limit = Math.max(1, Math.min(500, parseInt(filters.limit) || 100));
+        sql += ' LIMIT ?';
+        return db.prepare(sql).all(...params, limit).map(r => ({ ...r, conditionJson: safeJsonParse(r.condition_json, {}) }));
+    },
+    getRuleById: (id) => {
+        const r = db.prepare('SELECT * FROM fraud_rules WHERE id = ?').get(id);
+        if (!r) return null;
+        return { ...r, conditionJson: safeJsonParse(r.condition_json, {}) };
+    },
+    updateRule: (id, data) => {
+        const stmt = db.prepare(`UPDATE fraud_rules SET
+            name = COALESCE(?, name), enabled = COALESCE(?, enabled),
+            condition_json = COALESCE(?, condition_json), action = COALESCE(?, action),
+            severity = COALESCE(?, severity) WHERE id = ?`);
+        return stmt.run(
+            data.name || null,
+            data.enabled !== undefined ? (data.enabled ? 1 : 0) : null,
+            data.conditionJson ? JSON.stringify(data.conditionJson) : null,
+            data.action || null,
+            data.severity || null,
+            id
+        );
+    },
+    deleteRule: (id) => db.prepare('DELETE FROM fraud_rules WHERE id = ?').run(id)
 };
 
-const deviceFingerprintDb = {
-    create: (data) => {
-        const stmt = db.prepare(`
-            INSERT INTO device_fingerprints (user_id, visitor_id, fingerprint_hash, is_trusted)
-            VALUES (?, ?, ?, ?)
-            ON CONFLICT(user_id, visitor_id) DO UPDATE SET
-                last_seen = datetime('now'),
-                fingerprint_hash = excluded.fingerprint_hash,
-                is_trusted = COALESCE(device_fingerprints.is_trusted, excluded.is_trusted)
-        `);
-        return stmt.run(data.userId, data.visitorId, data.fingerprintHash, data.isTrusted ? 1 : 0);
+const msmeDb = {
+    createApplication: (data) => {
+        const stmt = db.prepare(`INSERT INTO msme_applications
+            (user_id, application_ref, business_name, udyam_number, gstin, pan_number, aadhaar_masked, enterprise_type,
+             annual_turnover, employees, requested_amount, requested_tenure, purpose,
+             consent_gst, consent_aa, consent_upi, status, decision, decision_reason, scored_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
+        return stmt.run(
+            data.userId, data.applicationRef, data.businessName, data.udyamNumber || null,
+            data.gstin || null, data.panNumber || null, data.aadhaarMasked || null,
+            data.enterpriseType || 'micro', data.annualTurnover || 0, data.employees || 0,
+            data.requestedAmount, data.requestedTenure, data.purpose || null,
+            data.consentGst ? 1 : 0, data.consentAa ? 1 : 0, data.consentUpi ? 1 : 0,
+            data.status || 'scoring', data.decision || null, data.decisionReason || null,
+            data.scoredAt || null
+        );
+    },
+    getApplicationById: (id) => {
+        const row = db.prepare('SELECT * FROM msme_applications WHERE id = ?').get(id);
+        if (!row) return null;
+        return {
+            ...row,
+            consentGst: !!row.consent_gst,
+            consentAa: !!row.consent_aa,
+            consentUpi: !!row.consent_upi,
+            cgtmseApplicable: false,
+        };
+    },
+    getApplicationsByUser: (userId, limit = 50) => {
+        return db.prepare('SELECT * FROM msme_applications WHERE user_id = ? ORDER BY created_at DESC LIMIT ?').all(userId, limit);
+    },
+    getApplications: (filters = {}) => {
+        let sql = `SELECT a.*, u.name AS user_name, u.email AS user_email FROM msme_applications a LEFT JOIN users u ON a.user_id = u.id WHERE 1=1`;
+        const params = [];
+        if (filters.status) { sql += ' AND a.status = ?'; params.push(filters.status); }
+        if (filters.decision) { sql += ' AND a.decision = ?'; params.push(filters.decision); }
+        if (filters.userId) { sql += ' AND a.user_id = ?'; params.push(filters.userId); }
+        if (filters.q) {
+            sql += ` AND (a.application_ref LIKE ? OR a.business_name LIKE ? OR u.name LIKE ? OR u.email LIKE ?)`;
+            const like = `%${filters.q}%`;
+            params.push(like, like, like, like);
+        }
+        const countRow = db.prepare(`SELECT COUNT(*) as total FROM msme_applications a LEFT JOIN users u ON a.user_id = u.id WHERE 1=1 ${sql.split('WHERE 1=1')[1] || ''}`).get(...params);
+        const allowedSort = ['created_at', 'updated_at', 'requested_amount'].includes(filters.sort) ? filters.sort : 'created_at';
+        const dir = filters.order && filters.order.toLowerCase() === 'asc' ? 'ASC' : 'DESC';
+        sql += ` ORDER BY a.${allowedSort} ${dir}`;
+        const page = Math.max(1, parseInt(filters.page) || 1);
+        const limit = Math.max(1, Math.min(500, parseInt(filters.limit) || 50));
+        const offset = (page - 1) * limit;
+        sql += ' LIMIT ? OFFSET ?';
+        const rows = db.prepare(sql).all(...params, limit, offset);
+        return { applications: rows, total: countRow.total, page, limit, pages: Math.ceil(countRow.total / limit) };
+    },
+    updateApplication: (id, data) => {
+        const stmt = db.prepare(`UPDATE msme_applications SET
+            status = COALESCE(?, status),
+            decision = COALESCE(?, decision),
+            decision_reason = COALESCE(?, decision_reason),
+            scored_at = COALESCE(?, scored_at),
+            updated_at = datetime('now')
+            WHERE id = ?`);
+        return stmt.run(data.status || null, data.decision || null, data.decisionReason || null, data.scoredAt || null, id);
+    },
+    deleteApplication: (id) => db.prepare('DELETE FROM msme_applications WHERE id = ?').run(id),
+
+    createScore: (data) => {
+        const stmt = db.prepare(`INSERT INTO msme_credit_scores
+            (application_id, score, category, factors_json, eli5, recommendations_json, fraud_signals_json)
+            VALUES (?, ?, ?, ?, ?, ?, ?)`);
+        return stmt.run(
+            data.applicationId, data.score, data.category,
+            JSON.stringify(data.factors || []),
+            data.eli5 || null,
+            JSON.stringify(data.recommendations || []),
+            JSON.stringify(data.fraudSignals || [])
+        );
+    },
+    getScoreByApplication: (applicationId) => {
+        const row = db.prepare('SELECT * FROM msme_credit_scores WHERE application_id = ?').get(applicationId);
+        if (!row) return null;
+        return {
+            ...row,
+            factors: safeJsonParse(row.factors_json, []),
+            recommendations: safeJsonParse(row.recommendations_json, []),
+            fraudSignals: safeJsonParse(row.fraud_signals_json, [])
+        };
     },
 
-    findByUserAndVisitor: (userId, visitorId) => {
-        const stmt = db.prepare('SELECT * FROM device_fingerprints WHERE user_id = ? AND visitor_id = ?');
-        return stmt.get(userId, visitorId);
+    createDocument: (data) => {
+        const stmt = db.prepare(`INSERT INTO msme_documents (application_id, doc_type, file_name, storage_path, verification_status) VALUES (?, ?, ?, ?, ?)`);
+        return stmt.run(data.applicationId, data.docType, data.fileName || null, data.storagePath || null, data.verificationStatus || 'pending');
     },
+    getDocumentsByApplication: (applicationId) => db.prepare('SELECT * FROM msme_documents WHERE application_id = ? ORDER BY created_at DESC').all(applicationId),
 
-    findByUser: (userId) => {
-        const stmt = db.prepare('SELECT * FROM device_fingerprints WHERE user_id = ? ORDER BY last_seen DESC');
-        return stmt.all(userId);
+    createOffer: (data) => {
+        const stmt = db.prepare(`INSERT INTO msme_offers
+            (application_id, offer_type, principal_amount, interest_rate, tenure_months, emi_amount,
+             total_interest, total_repayment, processing_fee, gst_on_fees, cgtmse_applicable,
+             cgtmse_guarantee_percent, cgtmse_guaranteed_amount, collateral_required, conditions_json)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
+        return stmt.run(
+            data.applicationId, data.offerType || 'primary', data.principalAmount, data.interestRate,
+            data.tenureMonths, data.emiAmount, data.totalInterest, data.totalRepayment,
+            data.processingFee || 0, data.gstOnFees || 0, data.cgtmseApplicable ? 1 : 0,
+            data.cgtmseGuaranteePercent || 0, data.cgtmseGuaranteedAmount || 0,
+            data.collateralRequired ? 1 : 0, data.conditions ? JSON.stringify(data.conditions) : null
+        );
     },
-
-    setTrusted: (id, isTrusted) => {
-        const stmt = db.prepare('UPDATE device_fingerprints SET is_trusted = ? WHERE id = ?');
-        return stmt.run(isTrusted ? 1 : 0, id);
+    getOffersByApplication: (applicationId) => {
+        return db.prepare('SELECT * FROM msme_offers WHERE application_id = ? ORDER BY created_at DESC').all(applicationId).map(o => ({
+            ...o,
+            cgtmseApplicable: !!o.cgtmse_applicable,
+            collateralRequired: !!o.collateral_required,
+            conditions: safeJsonParse(o.conditions_json, [])
+        }));
     },
+    acceptOffer: (offerId) => db.prepare("UPDATE msme_offers SET status = 'accepted', accepted_at = datetime('now') WHERE id = ?").run(offerId),
 
-    updateLastSeen: (id) => {
-        const stmt = db.prepare("UPDATE device_fingerprints SET last_seen = datetime('now') WHERE id = ?");
-        return stmt.run(id);
+    createAuditLog: (data) => {
+        const stmt = db.prepare(`INSERT INTO msme_audit_logs (application_id, user_id, action, details_json) VALUES (?, ?, ?, ?)`);
+        return stmt.run(data.applicationId, data.userId, data.action, JSON.stringify(data.details || {}));
     },
-
-    hasTrustedDevice: (userId) => {
-        const stmt = db.prepare('SELECT COUNT(*) as count FROM device_fingerprints WHERE user_id = ? AND is_trusted = 1');
-        const row = stmt.get(userId);
-        return row && row.count > 0;
-    },
-
-    getTrustStatus: (userId, visitorId, fingerprintHash) => {
-        const stmt = db.prepare('SELECT * FROM device_fingerprints WHERE user_id = ? AND visitor_id = ? AND fingerprint_hash = ?');
-        return stmt.get(userId, visitorId, fingerprintHash);
-    }
+    getAuditLogsByApplication: (applicationId) => db.prepare('SELECT * FROM msme_audit_logs WHERE application_id = ? ORDER BY created_at DESC').all(applicationId).map(l => ({ ...l, details: safeJsonParse(l.details_json, {}) }))
 };
+
+function safeJsonParse(value, fallback) {
+    try {
+        return value ? JSON.parse(value) : fallback;
+    } catch {
+        return fallback;
+    }
+}
 
 module.exports = {
     db,
@@ -1272,10 +1468,7 @@ module.exports = {
     deviceDb,
     modelDb,
     bankingDb,
-    deviceFingerprintDb,
-    otpDb,
+    fraudDb,
     msmeDb,
-    safeJsonParse,
-    ready: readyPromise,
-    pgAdapter
+    safeJsonParse
 };

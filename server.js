@@ -384,8 +384,24 @@ if (require.main === module) {
         }
     }, 24 * 60 * 60 * 1000);
 
-    seedAll()
-        .then(() => seedComprehensiveDemo())
+    // Seed demo data in stages. Comprehensive personas first (needed for the
+    // hackathon demo), then generic demo data. Errors are isolated so a seed
+    // stage failure never prevents the API from accepting traffic.
+    (async () => {
+        try {
+            const result = await seedComprehensiveDemo();
+            logger.info(`[seed] comprehensive personas: ${result.seeded ? 'seeded' : (result.reason || 'skipped')}`);
+        } catch (err) {
+            logger.error('[seed] comprehensive personas failed:', err.message);
+        }
+
+        try {
+            await seedAll();
+            logger.info('[seed] generic demo data complete');
+        } catch (err) {
+            logger.error('[seed] generic demo data failed:', err.message);
+        }
+    })()
         .then(() => {
             httpServer.listen(PORT, () => {
                 logger.info(`DS Financial API Server running on port ${PORT}`);
@@ -395,13 +411,8 @@ if (require.main === module) {
             });
         })
         .catch((err) => {
-            logger.error('Demo seed failed, starting server anyway:', err);
-            httpServer.listen(PORT, () => {
-                logger.info(`DS Financial API Server running on port ${PORT}`);
-                logger.info(`Environment: ${process.env.NODE_ENV}`);
-                logger.info(`Patent Portfolio: 47 innovations ready`);
-                require('./scripts/keepAlive').start();
-            });
+            logger.error('Server startup failed:', err);
+            process.exit(1);
         });
 }
 

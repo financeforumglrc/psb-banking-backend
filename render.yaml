@@ -55,7 +55,7 @@ services:
       - key: DATABASE_URL
         value: 
       # SQLite path (default). Use a Render Disk or PostgreSQL for persistence.
-      - key: DB_PATH
+      - key: DATABASE_PATH
         value: ./data/financial.db
       # --- SETU Account Aggregator sandbox ---
       # Set these in the Render dashboard; do not commit secrets to Git.
