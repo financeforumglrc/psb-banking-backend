@@ -460,6 +460,97 @@ function initializeDatabase() {
         CREATE INDEX IF NOT EXISTS idx_fraud_accounts_case ON fraud_accounts(fraud_case_id);
         CREATE INDEX IF NOT EXISTS idx_fraud_notes_case ON fraud_notes(fraud_case_id);
 
+        -- Real-world financial data ingestion tables (RBI, Market, Forex, Kaggle-style)
+        CREATE TABLE IF NOT EXISTS market_instruments (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            symbol TEXT UNIQUE NOT NULL,
+            name TEXT NOT NULL,
+            type TEXT NOT NULL, -- stock, index, etf, mutual_fund, commodity, currency, bond
+            exchange TEXT,
+            sector TEXT,
+            currency TEXT DEFAULT 'INR',
+            isin TEXT,
+            source TEXT,
+            source_url TEXT,
+            metadata_json TEXT,
+            created_at TEXT DEFAULT (datetime('now')),
+            updated_at TEXT DEFAULT (datetime('now'))
+        );
+
+        CREATE TABLE IF NOT EXISTS market_prices (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            instrument_id INTEGER NOT NULL,
+            price_date TEXT NOT NULL,
+            open_price REAL,
+            high_price REAL,
+            low_price REAL,
+            close_price REAL,
+            volume INTEGER,
+            adjusted_close REAL,
+            source TEXT,
+            created_at TEXT DEFAULT (datetime('now')),
+            FOREIGN KEY (instrument_id) REFERENCES market_instruments(id),
+            UNIQUE(instrument_id, price_date)
+        );
+
+        CREATE TABLE IF NOT EXISTS rbi_macro_data (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            data_date TEXT NOT NULL,
+            indicator TEXT NOT NULL, -- repo_rate, reverse_repo_rate, bank_rate, cpi_inflation, wpi_inflation, gdp_growth, forex_reserves
+            value REAL NOT NULL,
+            unit TEXT,
+            source TEXT,
+            source_url TEXT,
+            notes TEXT,
+            created_at TEXT DEFAULT (datetime('now')),
+            UNIQUE(data_date, indicator)
+        );
+
+        CREATE TABLE IF NOT EXISTS forex_rates (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            rate_date TEXT NOT NULL,
+            base_currency TEXT NOT NULL,
+            quote_currency TEXT NOT NULL,
+            rate REAL NOT NULL,
+            source TEXT,
+            created_at TEXT DEFAULT (datetime('now')),
+            UNIQUE(rate_date, base_currency, quote_currency)
+        );
+
+        CREATE TABLE IF NOT EXISTS external_datasets (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            dataset_key TEXT UNIQUE NOT NULL, -- e.g. kaggle_credit_card_fraud_sample
+            source_name TEXT NOT NULL, -- Kaggle, RBI, World Bank, etc.
+            source_url TEXT,
+            description TEXT,
+            record_count INTEGER,
+            schema_json TEXT,
+            sample_json TEXT,
+            last_fetched TEXT,
+            created_at TEXT DEFAULT (datetime('now'))
+        );
+
+        CREATE TABLE IF NOT EXISTS user_asset_links (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_asset_id INTEGER NOT NULL,
+            instrument_id INTEGER,
+            units REAL,
+            avg_cost REAL,
+            current_price REAL,
+            last_synced TEXT,
+            metadata_json TEXT,
+            created_at TEXT DEFAULT (datetime('now')),
+            FOREIGN KEY (user_asset_id) REFERENCES user_assets(id),
+            FOREIGN KEY (instrument_id) REFERENCES market_instruments(id)
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_instruments_symbol ON market_instruments(symbol);
+        CREATE INDEX IF NOT EXISTS idx_instruments_type ON market_instruments(type);
+        CREATE INDEX IF NOT EXISTS idx_prices_instrument_date ON market_prices(instrument_id, price_date);
+        CREATE INDEX IF NOT EXISTS idx_rbi_indicator_date ON rbi_macro_data(indicator, data_date);
+        CREATE INDEX IF NOT EXISTS idx_forex_date ON forex_rates(rate_date, base_currency, quote_currency);
+        CREATE INDEX IF NOT EXISTS idx_user_asset_links_asset ON user_asset_links(user_asset_id);
+
         -- MSME CreditBridge AI tables
         CREATE TABLE IF NOT EXISTS msme_applications (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -1068,6 +1159,125 @@ const bankingDb = {
         }
         const stmt = db.prepare(`INSERT INTO kyc_records (user_id, pan_number, aadhaar_masked, kyc_status) VALUES (?, ?, ?, ?)`);
         return stmt.run(data.userId, data.panNumber || null, data.aadhaarMasked || null, data.kycStatus || 'pending');
+    },
+
+    // ========== REAL-WORLD DATA LINKS (RBI / Market / Forex) ==========
+    createInstrument: (data) => {
+        const stmt = db.prepare(`INSERT OR REPLACE INTO market_instruments (symbol, name, type, exchange, sector, currency, isin, source, source_url, metadata_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
+        return stmt.run(data.symbol, data.name, data.type, data.exchange || null, data.sector || null, data.currency || 'INR', data.isin || null, data.source || null, data.sourceUrl || null, data.metadataJson ? JSON.stringify(data.metadataJson) : null);
+    },
+    findInstrumentBySymbol: (symbol) => {
+        return db.prepare('SELECT * FROM market_instruments WHERE symbol = ?').get(symbol);
+    },
+    getInstruments: (filters = {}) => {
+        let sql = 'SELECT * FROM market_instruments WHERE 1=1';
+        const params = [];
+        if (filters.type) { sql += ' AND type = ?'; params.push(filters.type); }
+        if (filters.exchange) { sql += ' AND exchange = ?'; params.push(filters.exchange); }
+        if (filters.sector) { sql += ' AND sector = ?'; params.push(filters.sector); }
+        sql += ' ORDER BY name';
+        return db.prepare(sql).all(...params);
+    },
+    createPrice: (data) => {
+        const stmt = db.prepare(`INSERT OR REPLACE INTO market_prices (instrument_id, price_date, open_price, high_price, low_price, close_price, volume, adjusted_close, source) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`);
+        return stmt.run(data.instrumentId, data.priceDate, data.open || null, data.high || null, data.low || null, data.close || null, data.volume || null, data.adjustedClose || null, data.source || null);
+    },
+    getPrices: (instrumentId, limit = 30) => {
+        return db.prepare('SELECT * FROM market_prices WHERE instrument_id = ? ORDER BY price_date DESC LIMIT ?').all(instrumentId, limit);
+    },
+    getLatestPrice: (instrumentId) => {
+        return db.prepare('SELECT * FROM market_prices WHERE instrument_id = ? ORDER BY price_date DESC LIMIT 1').get(instrumentId);
+    },
+    createRBIMacro: (data) => {
+        const stmt = db.prepare(`INSERT OR REPLACE INTO rbi_macro_data (data_date, indicator, value, unit, source, source_url, notes) VALUES (?, ?, ?, ?, ?, ?, ?)`);
+        return stmt.run(data.dataDate, data.indicator, data.value, data.unit || null, data.source || null, data.sourceUrl || null, data.notes || null);
+    },
+    getRBIMacro: (indicator, limit = 12) => {
+        return db.prepare('SELECT * FROM rbi_macro_data WHERE indicator = ? ORDER BY data_date DESC LIMIT ?').all(indicator, limit);
+    },
+    getLatestRBIMacro: (indicator) => {
+        return db.prepare('SELECT * FROM rbi_macro_data WHERE indicator = ? ORDER BY data_date DESC LIMIT 1').get(indicator);
+    },
+    createForexRate: (data) => {
+        const stmt = db.prepare(`INSERT OR REPLACE INTO forex_rates (rate_date, base_currency, quote_currency, rate, source) VALUES (?, ?, ?, ?, ?)`);
+        return stmt.run(data.rateDate, data.baseCurrency, data.quoteCurrency, data.rate, data.source || null);
+    },
+    getForexRate: (baseCurrency, quoteCurrency) => {
+        return db.prepare('SELECT * FROM forex_rates WHERE base_currency = ? AND quote_currency = ? ORDER BY rate_date DESC LIMIT 1').get(baseCurrency, quoteCurrency);
+    },
+    createExternalDataset: (data) => {
+        const stmt = db.prepare(`INSERT OR REPLACE INTO external_datasets (dataset_key, source_name, source_url, description, record_count, schema_json, sample_json, last_fetched) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`);
+        return stmt.run(data.datasetKey, data.sourceName, data.sourceUrl || null, data.description || null, data.recordCount || null, data.schemaJson ? JSON.stringify(data.schemaJson) : null, data.sampleJson ? JSON.stringify(data.sampleJson) : null, data.lastFetched || new Date().toISOString());
+    },
+    getExternalDataset: (key) => {
+        return db.prepare('SELECT * FROM external_datasets WHERE dataset_key = ?').get(key);
+    },
+    createUserAssetLink: (data) => {
+        const stmt = db.prepare(`INSERT INTO user_asset_links (user_asset_id, instrument_id, units, avg_cost, current_price, last_synced, metadata_json) VALUES (?, ?, ?, ?, ?, ?, ?)`);
+        return stmt.run(data.userAssetId, data.instrumentId || null, data.units || null, data.avgCost || null, data.currentPrice || null, data.lastSynced || null, data.metadataJson ? JSON.stringify(data.metadataJson) : null);
+    },
+    getUserAssetLinks: (userAssetId) => {
+        return db.prepare('SELECT l.*, i.symbol, i.name, i.type FROM user_asset_links l LEFT JOIN market_instruments i ON l.instrument_id = i.id WHERE l.user_asset_id = ?').all(userAssetId);
+    }
+};
+
+const marketDb = {
+    createInstrument: (data) => {
+        const stmt = db.prepare(`INSERT OR REPLACE INTO market_instruments (symbol, name, type, exchange, sector, currency, isin, source, source_url, metadata_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
+        return stmt.run(data.symbol, data.name, data.type, data.exchange || null, data.sector || null, data.currency || 'INR', data.isin || null, data.source || null, data.sourceUrl || null, data.metadataJson ? JSON.stringify(data.metadataJson) : null);
+    },
+    findInstrumentBySymbol: (symbol) => {
+        return db.prepare('SELECT * FROM market_instruments WHERE symbol = ?').get(symbol);
+    },
+    getInstruments: (filters = {}) => {
+        let sql = 'SELECT * FROM market_instruments WHERE 1=1';
+        const params = [];
+        if (filters.type) { sql += ' AND type = ?'; params.push(filters.type); }
+        if (filters.exchange) { sql += ' AND exchange = ?'; params.push(filters.exchange); }
+        if (filters.sector) { sql += ' AND sector = ?'; params.push(filters.sector); }
+        sql += ' ORDER BY name';
+        return db.prepare(sql).all(...params);
+    },
+    createPrice: (data) => {
+        const stmt = db.prepare(`INSERT OR REPLACE INTO market_prices (instrument_id, price_date, open_price, high_price, low_price, close_price, volume, adjusted_close, source) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`);
+        return stmt.run(data.instrumentId, data.priceDate, data.open || null, data.high || null, data.low || null, data.close || null, data.volume || null, data.adjustedClose || null, data.source || null);
+    },
+    getPrices: (instrumentId, limit = 30) => {
+        return db.prepare('SELECT * FROM market_prices WHERE instrument_id = ? ORDER BY price_date DESC LIMIT ?').all(instrumentId, limit);
+    },
+    getLatestPrice: (instrumentId) => {
+        return db.prepare('SELECT * FROM market_prices WHERE instrument_id = ? ORDER BY price_date DESC LIMIT 1').get(instrumentId);
+    },
+    createRBIMacro: (data) => {
+        const stmt = db.prepare(`INSERT OR REPLACE INTO rbi_macro_data (data_date, indicator, value, unit, source, source_url, notes) VALUES (?, ?, ?, ?, ?, ?, ?)`);
+        return stmt.run(data.dataDate, data.indicator, data.value, data.unit || null, data.source || null, data.sourceUrl || null, data.notes || null);
+    },
+    getRBIMacro: (indicator, limit = 12) => {
+        return db.prepare('SELECT * FROM rbi_macro_data WHERE indicator = ? ORDER BY data_date DESC LIMIT ?').all(indicator, limit);
+    },
+    getLatestRBIMacro: (indicator) => {
+        return db.prepare('SELECT * FROM rbi_macro_data WHERE indicator = ? ORDER BY data_date DESC LIMIT 1').get(indicator);
+    },
+    createForexRate: (data) => {
+        const stmt = db.prepare(`INSERT OR REPLACE INTO forex_rates (rate_date, base_currency, quote_currency, rate, source) VALUES (?, ?, ?, ?, ?)`);
+        return stmt.run(data.rateDate, data.baseCurrency, data.quoteCurrency, data.rate, data.source || null);
+    },
+    getForexRate: (baseCurrency, quoteCurrency) => {
+        return db.prepare('SELECT * FROM forex_rates WHERE base_currency = ? AND quote_currency = ? ORDER BY rate_date DESC LIMIT 1').get(baseCurrency, quoteCurrency);
+    },
+    createExternalDataset: (data) => {
+        const stmt = db.prepare(`INSERT OR REPLACE INTO external_datasets (dataset_key, source_name, source_url, description, record_count, schema_json, sample_json, last_fetched) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`);
+        return stmt.run(data.datasetKey, data.sourceName, data.sourceUrl || null, data.description || null, data.recordCount || null, data.schemaJson ? JSON.stringify(data.schemaJson) : null, data.sampleJson ? JSON.stringify(data.sampleJson) : null, data.lastFetched || new Date().toISOString());
+    },
+    getExternalDataset: (key) => {
+        return db.prepare('SELECT * FROM external_datasets WHERE dataset_key = ?').get(key);
+    },
+    createUserAssetLink: (data) => {
+        const stmt = db.prepare(`INSERT INTO user_asset_links (user_asset_id, instrument_id, units, avg_cost, current_price, last_synced, metadata_json) VALUES (?, ?, ?, ?, ?, ?, ?)`);
+        return stmt.run(data.userAssetId, data.instrumentId || null, data.units || null, data.avgCost || null, data.currentPrice || null, data.lastSynced || null, data.metadataJson ? JSON.stringify(data.metadataJson) : null);
+    },
+    getUserAssetLinks: (userAssetId) => {
+        return db.prepare('SELECT l.*, i.symbol, i.name, i.type FROM user_asset_links l LEFT JOIN market_instruments i ON l.instrument_id = i.id WHERE l.user_asset_id = ?').all(userAssetId);
     }
 };
 
@@ -1469,6 +1679,7 @@ module.exports = {
     deviceDb,
     modelDb,
     bankingDb,
+    marketDb,
     fraudDb,
     msmeDb,
     safeJsonParse

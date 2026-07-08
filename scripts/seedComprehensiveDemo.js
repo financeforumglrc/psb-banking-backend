@@ -18,8 +18,37 @@ const {
   generateAuditLogs,
   generateFraudEvents,
 } = require('../seeds/syntheticPersonas');
+const { ingestAllRealData, linkAssetToInstrument } = require('../services/dataIngestion');
 
 const FORCE = process.env.FORCE_COMPREHENSIVE_SEED === '1' || process.env.FORCE_SEED === '1';
+
+// Map synthetic asset names to real market instrument symbols.
+function resolveAssetSymbol(name, assetType) {
+  const n = (name || '').toLowerCase();
+  if (n.includes('nifty')) return '^NSEI';
+  if (n.includes('reliance')) return 'RELIANCE.NS';
+  if (n.includes('tcs')) return 'TCS.NS';
+  if (n.includes('infosys') || n.includes('infy')) return 'INFY.NS';
+  if (n.includes('hdfc bank')) return 'HDFCBANK.NS';
+  if (n.includes('icici')) return 'ICICIBANK.NS';
+  if (n.includes('sbi')) return 'SBIN.NS';
+  if (n.includes('unilever') || n.includes('hul')) return 'HINDUNILVR.NS';
+  if (n.includes('itc')) return 'ITC.NS';
+  if (n.includes('l&t') || n.includes('larsen')) return 'LT.NS';
+  if (n.includes('bharti') || n.includes('airtel')) return 'BHARTIARTL.NS';
+  if (n.includes('kotak')) return 'KOTAKBANK.NS';
+  if (n.includes('axis')) return 'AXISBANK.NS';
+  if (n.includes('bajaj finance')) return 'BAJFINANCE.NS';
+  if (n.includes('maruti')) return 'MARUTI.NS';
+  if (n.includes('tata motors')) return 'TATAMOTORS.NS';
+  if (n.includes('sun pharma')) return 'SUNPHARMA.NS';
+  if (n.includes('dr reddy')) return 'DRREDDY.NS';
+  if (assetType === 'gold' || n.includes('gold') || n.includes('sgb')) return 'GC=F';
+  if (assetType === 'mutualFund' && n.includes('bluechip')) return '^NSEI';
+  if (assetType === 'mutualFund' && n.includes('small cap')) return '^NSEI';
+  if (assetType === 'stock') return '^NSEI';
+  return null;
+}
 
 async function clearPersonaData() {
   console.log('[seedComprehensiveDemo] clearing existing persona data...');
@@ -114,10 +143,10 @@ function seedSinglePersona(persona, hashedPassword) {
     });
   });
 
-  // 5. Assets
+  // 5. Assets (with real-market linking where possible)
   const assets = generateAssets(persona);
   assets.forEach(a => {
-    bankingDb.createAsset({
+    const result = bankingDb.createAsset({
       userId: persona.id,
       name: a.name,
       assetType: a.assetType,
@@ -125,6 +154,11 @@ function seedSinglePersona(persona, hashedPassword) {
       liquidity: a.liquidity,
       returns: a.returns,
     });
+    // Link synthetic assets to real instruments for proper market tracking.
+    const symbol = resolveAssetSymbol(a.name, a.assetType);
+    if (symbol) {
+      linkAssetToInstrument(result.lastInsertRowid, symbol, { personaId: persona.id, seededValue: a.value });
+    }
   });
 
   // 6. Audit logs
@@ -170,6 +204,15 @@ async function seedComprehensiveDemo() {
 
   if (FORCE && (existingById > 0 || existingByEmail > 0)) {
     await clearPersonaData();
+  }
+
+  // Ingest real-world reference data before creating personas so asset linking works.
+  console.log('[seedComprehensiveDemo] ingesting real-world reference data...');
+  try {
+    const dataSummary = await ingestAllRealData();
+    console.log('[seedComprehensiveDemo] real-world data ingestion summary:', JSON.stringify(dataSummary, null, 2));
+  } catch (err) {
+    console.warn('[seedComprehensiveDemo] real-world data ingestion failed (continuing with synthetic data):', err.message);
   }
 
   console.log('[seedComprehensiveDemo] seeding curated personas...');

@@ -32,6 +32,7 @@ const adminRoutes = require('./routes/admin');
 const fraudRoutes = require('./routes/fraud');
 const chartRoutes = require('./routes/charts');
 const marketDataRoutes = require('./routes/market-data');
+const realDataRoutes = require('./routes/realData');
 const scenarioRoutes = require('./routes/scenarios');
 const nlpQueryRoutes = require('./routes/nlp-query');
 const screenerRoutes  = require('./routes/screener');
@@ -200,9 +201,15 @@ app.get('/extracted_functions.js', (req, res) => {
 
 // Health check endpoint
 app.get('/api/v1/health', (req, res) => {
-    const userCount = (() => { try { return db.prepare('SELECT COUNT(*) as c FROM users').get().c; } catch { return -1; } })();
-    const accountCount = (() => { try { return db.prepare('SELECT COUNT(*) as c FROM bank_accounts').get().c; } catch { return -1; } })();
-    const txnCount = (() => { try { return db.prepare('SELECT COUNT(*) as c FROM transactions').get().c; } catch { return -1; } })();
+    const count = (table) => { try { return db.prepare(`SELECT COUNT(*) as c FROM ${table}`).get().c; } catch { return -1; } };
+    const userCount = count('users');
+    const accountCount = count('bank_accounts');
+    const txnCount = count('transactions');
+    const instrumentCount = count('market_instruments');
+    const priceCount = count('market_prices');
+    const rbiMacroCount = count('rbi_macro_data');
+    const forexCount = count('forex_rates');
+    const datasetCount = count('external_datasets');
     res.json({
         success: true,
         message: 'DS Financial API is running',
@@ -213,6 +220,13 @@ app.get('/api/v1/health', (req, res) => {
         userCount,
         accountCount,
         txnCount,
+        realData: {
+            instruments: instrumentCount,
+            prices: priceCount,
+            rbiMacro: rbiMacroCount,
+            forex: forexCount,
+            externalDatasets: datasetCount
+        },
         patents: {
             total: 47,
             phase1: 7,
@@ -253,6 +267,7 @@ app.use('/api/v1/financial-model', authMiddleware, financialModelRoutes);
 // Phase 4: World-class features
 app.use('/api/v1/charts', chartRoutes);
 app.use('/api/v1/market', marketDataRoutes);
+app.use('/api/v1/real-data', realDataRoutes);
 app.use('/api/v1/scenarios', scenarioRoutes);
 app.use('/api/v1/query', nlpQueryRoutes);
 app.use('/api/v1/screener', screenerRoutes);
