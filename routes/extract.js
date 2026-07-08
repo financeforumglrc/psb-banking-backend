@@ -93,7 +93,6 @@ function parseByokHeader(req) {
 router.post('/pdf', upload.single('pdf'), async (req, res) => {
     const deviceId = getDeviceId(req);
     const byok = parseByokHeader(req);
-    let tempPath = req.file?.path;
 
     try {
         // Check device quota
@@ -129,17 +128,10 @@ router.post('/pdf', upload.single('pdf'), async (req, res) => {
         const cached = extractionDb.findByHash(pdfHash);
         if (cached) {
             deviceDb.increment(deviceId, 'extract');
-            let cachedData = null;
-            try {
-                cachedData = JSON.parse(cached.result_json);
-            } catch (parseErr) {
-                console.error('Cached extraction JSON parse error:', parseErr);
-                return res.status(500).json({ success: false, error: 'Cached extraction data is corrupt', code: 'CACHE_PARSE_ERROR' });
-            }
             return res.json({
                 success: true,
                 cached: true,
-                data: cachedData,
+                data: JSON.parse(cached.result_json),
             });
         }
 
@@ -176,15 +168,17 @@ router.post('/pdf', upload.single('pdf'), async (req, res) => {
         });
     } catch (error) {
         console.error('PDF extraction error:', error);
+        const isUnsupportedImage = error.message && (
+            error.message.includes('does not support image input') ||
+            error.message.includes('only supports PDF')
+        );
         res.status(500).json({
             success: false,
-            error: 'Extraction failed',
+            error: isUnsupportedImage
+                ? 'This AI model only supports PDF files. Please upload a valid PDF document.'
+                : 'Extraction failed',
             code: 'EXTRACTION_ERROR',
         });
-    } finally {
-        if (tempPath) {
-            try { fs.unlinkSync(tempPath); } catch (e) { /* ignore */ }
-        }
     }
 });
 

@@ -2,14 +2,6 @@
  * Global Error Handler Middleware
  */
 
-const isDev = process.env.NODE_ENV === 'development';
-
-const safeMessage = (err) => {
-    // Only expose detailed messages for known client-side errors in development
-    if (isDev) return err.message || 'Server Error';
-    return 'Server Error';
-};
-
 const errorHandler = (err, req, res, next) => {
     console.error('Error:', err);
 
@@ -35,7 +27,7 @@ const errorHandler = (err, req, res, next) => {
     if (err.name === 'SqliteError' || err.name === 'TypeError') {
         return res.status(400).json({
             success: false,
-            error: isDev ? err.message : 'Database validation error',
+            error: err.message || 'Database validation error',
             code: 'VALIDATION_ERROR'
         });
     }
@@ -59,17 +51,12 @@ const errorHandler = (err, req, res, next) => {
 
     // Default error
     const statusCode = err.statusCode || (err.status >= 100 && err.status < 600 ? err.status : 500) || 500;
-    const response = {
+    res.status(statusCode).json({
         success: false,
-        error: safeMessage(err),
-        code: err.code || 'INTERNAL_ERROR'
-    };
-
-    if (isDev) {
-        response.stack = err.stack;
-    }
-
-    res.status(statusCode).json(response);
+        error: err.message || 'Server Error',
+        code: err.code || 'INTERNAL_ERROR',
+        ...(process.env.NODE_ENV === 'development' && { stack: err.stack })
+    });
 };
 
 module.exports = { errorHandler };

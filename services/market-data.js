@@ -5,33 +5,41 @@
  */
 
 const axios = require('axios');
-const cacheService = require('./cacheService');
 
 const YAHOO_FINANCE_BASE = 'https://query1.finance.yahoo.com/v8/finance/chart';
 const YAHOO_QUOTE_BASE = 'https://query1.finance.yahoo.com/v7/finance/quote';
 
-// ============================================
-// REAL-TIME QUOTE
-// ============================================
-async function getQuote(ticker) {
-    const cacheKey = cacheService.getMarketQuoteKey(ticker);
-    const cached = await cacheService.get(cacheKey);
-    if (cached) return cached;
+const MOCK_QUOTES = {
+    'NIFTY50': { price: 22450.50, change: 76.20, changePercent: 0.34, name: 'NIFTY 50' },
+    'SENSEX':  { price: 73890.00, change: 205.40, changePercent: 0.28, name: 'BSE SENSEX' },
+    'RELIANCE.NS': { price: 2845.60, change: -3.40, changePercent: -0.12, name: 'Reliance Industries' },
+    'TCS.NS':  { price: 3924.15, change: 17.60, changePercent: 0.45, name: 'Tata Consultancy Services' },
+    'HDFCBANK.NS': { price: 1612.30, change: 3.55, changePercent: 0.22, name: 'HDFC Bank' },
+    'INFY.NS': { price: 1478.90, change: -1.20, changePercent: -0.08, name: 'Infosys' },
+};
 
+// ============================================
+// REAL-TIME QUOTE WITH FALLBACK CHAIN
+// Source 1: Yahoo Finance v7
+// Source 2: Alpha Vantage (if ALPHA_VANTAGE_KEY set)
+// Source 3: Mock fallback (always works)
+// ============================================
+async function getQuoteWithFallback(ticker) {
+    // Source 1: Yahoo Finance (unofficial)
     try {
         const url = `${YAHOO_QUOTE_BASE}?symbols=${encodeURIComponent(ticker)}&fields=regularMarketPrice,regularMarketChange,regularMarketChangePercent,regularMarketDayHigh,regularMarketDayLow,regularMarketVolume,fiftyTwoWeekHigh,fiftyTwoWeekLow,marketCap,trailingPE,forwardPE,priceToBook,enterpriseToEbitda,dividendYield,bookValue,sharesOutstanding,shortName,longName,sector,industry`;
-        
-        const response = await axios.get(url, {
-            headers: {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-            },
-            timeout: 10000
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 5000);
+        const res = await fetch(url, {
+            headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' },
+            signal: controller.signal
         });
-        
-        const result = response.data?.quoteResponse?.result?.[0];
-        if (!result) return null;
-        
-        const quote = {
+        clearTimeout(timeout);
+        if (!res.ok) throw new Error('Yahoo returned ' + res.status);
+        const data = await res.json();
+        const result = data?.quoteResponse?.result?.[0];
+        if (!result || result.regularMarketPrice == null) throw new Error('No result in Yahoo response');
+        return {
             ticker: result.symbol,
             name: result.shortName || result.longName,
             price: result.regularMarketPrice,
@@ -53,24 +61,94 @@ async function getQuote(ticker) {
             sector: result.sector,
             industry: result.industry,
             currency: result.currency || 'INR',
+            source: 'yahoo',
             timestamp: new Date().toISOString()
         };
-        await cacheService.set(cacheKey, quote, cacheService.TTL.MARKET_QUOTE);
-        return quote;
-    } catch (error) {
-        console.error(`Market data fetch failed for ${ticker}:`, error.message);
-        return null;
+    } catch (e1) {
+        console.warn(`[market] Yahoo failed for ${ticker}:`, e1.message);
     }
+
+    // Source 2: Alpha Vantage free tier
+    const avKey = process.env.ALPHA_VANTAGE_KEY;
+    if (avKey) {
+        try {
+            const url = `https://www.alphavantage.co/query?function=GLOBAL_QUOTE&symbol=${encodeURIComponent(ticker)}&apikey=${avKey}`;
+            const controller = new AbortController();
+            const timeout = setTimeout(() => controller.abort(), 5000);
+            const res = await fetch(url, { signal: controller.signal });
+            clearTimeout(timeout);
+            const data = await res.json();
+            const q = data?.['Global Quote'];
+            if (q?.['05. price']) {
+                return {
+                    ticker,
+                    name: ticker,
+                    price: parseFloat(q['05. price']),
+                    change: parseFloat(q['09. change'] || '0'),
+                    change_percent: parseFloat((q['10. change percent'] || '0').replace('%', '')),
+                    day_high: null,
+                    day_low: null,
+                    volume: parseInt(q['06. volume'] || '0', 10),
+                    high_52w: null,
+                    low_52w: null,
+                    market_cap: null,
+                    pe_trailing: null,
+                    pe_forward: null,
+                    pb: null,
+                    ev_ebitda: null,
+                    dividend_yield: null,
+                    book_value: null,
+                    shares_outstanding: null,
+                    sector: null,
+                    industry: null,
+                    currency: 'INR',
+                    source: 'alphavantage',
+                    timestamp: new Date().toISOString()
+                };
+            }
+        } catch (e2) {
+            console.warn(`[market] Alpha Vantage failed for ${ticker}:`, e2.message);
+        }
+    }
+
+    // Source 3: Mock fallback — always works
+    const mock = MOCK_QUOTES[ticker] || { price: 1000, change: 0, changePercent: 0, name: ticker };
+    return {
+        ticker,
+        name: mock.name,
+        price: mock.price,
+        change: mock.change,
+        change_percent: mock.changePercent,
+        day_high: null,
+        day_low: null,
+        volume: 0,
+        high_52w: null,
+        low_52w: null,
+        market_cap: null,
+        pe_trailing: null,
+        pe_forward: null,
+        pb: null,
+        ev_ebitda: null,
+        dividend_yield: null,
+        book_value: null,
+        shares_outstanding: null,
+        sector: null,
+        industry: null,
+        currency: 'INR',
+        source: 'mock',
+        timestamp: new Date().toISOString()
+    };
+}
+
+async function getQuote(ticker) {
+    const quote = await getQuoteWithFallback(ticker);
+    return quote || null;
 }
 
 // ============================================
 // HISTORICAL PRICE DATA (for charts)
 // ============================================
 async function getHistoricalData(ticker, range = '1y', interval = '1d') {
-    const cacheKey = cacheService.getMarketHistoricalKey(ticker, range);
-    const cached = await cacheService.get(cacheKey);
-    if (cached) return cached;
-
     try {
         const url = `${YAHOO_FINANCE_BASE}/${encodeURIComponent(ticker)}?range=${range}&interval=${interval}&includeAdjustedClose=true`;
         
@@ -97,7 +175,7 @@ async function getHistoricalData(ticker, range = '1y', interval = '1d') {
             adj_close: adjcloses[i] || closes[i]
         })).filter(d => d.price !== null);
         
-        const historicalData = {
+        return {
             ticker,
             range,
             interval,
@@ -108,8 +186,6 @@ async function getHistoricalData(ticker, range = '1y', interval = '1d') {
                 instrument_type: result.meta?.instrumentType
             }
         };
-        await cacheService.set(cacheKey, historicalData, cacheService.TTL.MARKET_HISTORICAL);
-        return historicalData;
     } catch (error) {
         console.error(`Historical data fetch failed for ${ticker}:`, error.message);
         return null;

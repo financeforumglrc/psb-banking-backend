@@ -3,6 +3,8 @@
  * Testing Patent PAT-004: Multi-Regime Tax Optimizer
  */
 
+process.env.JWT_SECRET = 'testsecret';
+
 const request = require('supertest');
 const app = require('../server');
 

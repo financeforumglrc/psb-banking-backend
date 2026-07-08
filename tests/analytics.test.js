@@ -1,3 +1,5 @@
+process.env.JWT_SECRET = 'testsecret';
+
 const request = require('supertest');
 const app = require('../server');
 

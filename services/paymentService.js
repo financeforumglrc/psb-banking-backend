@@ -1,9 +1,7 @@
 /**
  * Payment Service
- * Razorpay integration for subscriptions and one-time payments (test mode)
+ * Razorpay integration for subscriptions
  */
-
-const crypto = require('crypto');
 
 let Razorpay;
 try {
@@ -52,44 +50,6 @@ class PaymentService {
         };
     }
 
-    isConfigured() {
-        return Boolean(this.razorpay);
-    }
-
-    /**
-     * Create a generic Razorpay order for a one-time payment.
-     * Amount is expected in INR (rupees) and converted to paise internally.
-     * Falls back to a deterministic simulation order when Razorpay is not configured.
-     */
-    async createPaymentOrder({ amount, currency = 'INR', receipt, notes = {} }) {
-        const amountNum = Number(amount);
-        if (isNaN(amountNum) || amountNum <= 0) {
-            throw new Error('Amount must be a positive number');
-        }
-        const amountPaise = Math.round(amountNum * 100);
-        const receiptId = receipt || `rcpt_${Date.now()}`;
-
-        if (!this.razorpay) {
-            return {
-                id: `fallback_order_${Date.now()}`,
-                amount: amountPaise,
-                currency,
-                receipt: receiptId,
-                status: 'created',
-                fallback: true
-            };
-        }
-
-        const order = await this.razorpay.orders.create({
-            amount: amountPaise,
-            currency,
-            receipt: receiptId,
-            notes
-        });
-
-        return order;
-    }
-
     async createOrder(planId, userId) {
         const plan = this.plans[planId];
         if (!plan) throw new Error('Invalid plan');
@@ -110,25 +70,15 @@ class PaymentService {
         return order;
     }
 
-    /**
-     * Verify Razorpay payment signature.
-     * Returns true for verified fallback orders when in fallback mode.
-     */
     async verifyPayment(paymentId, orderId, signature) {
-        if (!this.razorpay) {
-            return orderId && orderId.startsWith('fallback_order_');
-        }
-
+        const crypto = require('crypto');
         const body = orderId + '|' + paymentId;
         const expectedSignature = crypto
             .createHmac('sha256', process.env.RAZORPAY_KEY_SECRET)
             .update(body)
             .digest('hex');
 
-        const expectedBuf = Buffer.from(expectedSignature, 'hex');
-        const signatureBuf = Buffer.from(signature, 'hex');
-        if (expectedBuf.length !== signatureBuf.length) return false;
-        return crypto.timingSafeEqual(expectedBuf, signatureBuf);
+        return expectedSignature === signature;
     }
 
     async createSubscription(planId, userId) {
@@ -162,25 +112,6 @@ class PaymentService {
             ...plan,
             priceDisplay: `₹${(plan.price / 100).toLocaleString('en-IN')}`
         }));
-    }
-
-    /**
-     * Verify Razorpay webhook signature.
-     * Returns true when in fallback/simulation mode (no webhook secret configured).
-     */
-    verifyWebhookSignature(body, signature) {
-        if (!process.env.RAZORPAY_WEBHOOK_SECRET) {
-            return true;
-        }
-        if (!signature) return false;
-        const expectedSignature = crypto
-            .createHmac('sha256', process.env.RAZORPAY_WEBHOOK_SECRET)
-            .update(body)
-            .digest('hex');
-        const expectedBuf = Buffer.from(expectedSignature, 'hex');
-        const signatureBuf = Buffer.from(signature, 'hex');
-        if (expectedBuf.length !== signatureBuf.length) return false;
-        return crypto.timingSafeEqual(expectedBuf, signatureBuf);
     }
 }
 

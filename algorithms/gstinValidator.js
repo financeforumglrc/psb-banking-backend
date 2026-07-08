@@ -222,13 +222,11 @@ const GSTINValidatorPro = {
 
         // Check 7: Checksum Validation
         result.checksPerformed.push({ check: 'Checksum Verification', status: 'pending' });
-        let checksumValid = true;
         const calculatedChecksum = this.calculateChecksum(gstin);
         if (calculatedChecksum !== gstin[14]) {
             result.checksPerformed[6].status = 'fail';
             result.alerts.push({ type: 'error', message: `Checksum mismatch. Expected: ${calculatedChecksum}` });
             result.riskScore += 40;
-            checksumValid = false;
         } else {
             result.checksPerformed[6].status = 'pass';
         }
@@ -279,8 +277,8 @@ const GSTINValidatorPro = {
             result.isValid = false;
         }
 
-        // Checksum failures always invalidate the GSTIN regardless of other scores
-        if (!checksumValid) {
+        // Checksum mismatch should always invalidate a GSTIN
+        if (result.checksPerformed[6] && result.checksPerformed[6].status === 'fail') {
             result.isValid = false;
         }
 

@@ -22,43 +22,6 @@ npm run dev
 npm test
 ```
 
-## Render Deployment Notes
-
-### PostgreSQL persistence (free tier)
-
-The backend now supports Render's free PostgreSQL service so data survives redeploys:
-
-1. Create a Render PostgreSQL instance and copy its **internal connection string**.
-2. In the Render dashboard for `psb-securewealth-backend`, set the env var:
-   - `DATABASE_URL` = `postgresql://...`
-3. (Optional) Seed Postgres from an existing local SQLite file:
-   ```bash
-   export DATABASE_URL=postgresql://...
-   node scripts/migrate-sqlite-to-pg.js
-   ```
-4. Deploy/restart the web service. On startup it will:
-   - Ensure the Postgres schema (`scripts/pg-schema.sql`).
-   - Hydrate the local SQLite cache from Postgres.
-   - Install triggers that queue every local mutation.
-   - Flush the queue to Postgres every 15 seconds and on shutdown.
-
-If `DATABASE_URL` is not set, the service falls back to plain SQLite (used by tests and local dev).
-
-### SendGrid email OTP
-
-The `/api/v1/otp/*` endpoints send real OTPs via SendGrid when configured:
-
-1. Sign up for a free SendGrid account at https://sendgrid.com (100 emails/day).
-2. Create a single sender and an API key.
-3. In the Render dashboard set:
-   - `SENDGRID_API_KEY` = your API key
-   - `SENDGRID_FROM_EMAIL` = verified sender email (e.g. `noreply@dsfinancial.in`)
-   - `SENDGRID_FROM_NAME` = `PSB SecureWealth`
-
-If SendGrid is not configured, OTPs are logged to the server console in dev/test mode.
-
----
-
 ## API Endpoints
 
 ### Authentication
@@ -66,10 +29,6 @@ If SendGrid is not configured, OTPs are logged to the server console in dev/test
 - `POST /api/v1/auth/login` - Login
 - `POST /api/v1/auth/refresh` - Refresh token
 - `GET /api/v1/auth/me` - Get current user
-
-### OTP
-- `POST /api/v1/otp/send` - Send email OTP
-- `POST /api/v1/otp/verify` - Verify email OTP
 
 ### GST (Patents PAT-001 to PAT-006)
 - `POST /api/v1/gst/validate-gstin` - GSTIN validation with risk scoring
@@ -119,3 +78,8 @@ If SendGrid is not configured, OTPs are logged to the server console in dev/test
 - Helmet security headers
 - CORS protection
 - Input validation
+- API key support for enterprise
+
+## License
+
+Proprietary - DS Financial Solutions

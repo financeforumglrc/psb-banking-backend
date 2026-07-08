@@ -3,15 +3,13 @@ const router = express.Router();
 const { bankingDb } = require('../services/database');
 const { authMiddleware } = require('../middleware/auth');
 
-const genericError = () => ({ success: false, error: 'KYC request failed' });
-
 router.get('/status', authMiddleware, (req, res) => {
     try {
         const kyc = bankingDb.getKycByUser(req.user.id);
         res.json({ success: true, data: kyc || { kyc_status: 'pending' } });
     } catch (err) {
         console.error('KYC status error:', err);
-        res.status(500).json(genericError());
+        res.status(500).json({ success: false, error: 'Failed to load KYC status' });
     }
 });
 
@@ -28,32 +26,16 @@ router.post('/submit', authMiddleware, (req, res) => {
             return res.status(400).json({ success: false, error: 'Invalid Aadhaar. Expected 12 digits.' });
         }
 
-        // KYC is submitted for review; real verification must be performed by an eKYC provider or admin.
-        const kycStatus = (panNumber && aadhaarMasked) ? 'submitted' : 'pending';
-
         bankingDb.createOrUpdateKyc({
             userId: req.user.id,
             panNumber,
             aadhaarMasked,
-            kycStatus
+            kycStatus: 'pending' // Always pending — real eKYC verification required
         });
 
-        res.json({ success: true, message: 'KYC submitted successfully', data: { status: kycStatus } });
+        res.json({ success: true, message: 'KYC submitted successfully', data: { status: 'pending' } });
     } catch (err) {
-        console.error('KYC submit error:', err);
-        res.status(500).json(genericError());
-    }
-});
-
-router.post('/verify', authMiddleware, (req, res) => {
-    try {
-        const { reference } = req.body;
-        bankingDb.markKycVerified(req.user.id, reference);
-        const kyc = bankingDb.getKycByUser(req.user.id);
-        res.json({ success: true, message: 'KYC verified', data: kyc });
-    } catch (err) {
-        console.error('KYC verify error:', err);
-        res.status(500).json(genericError());
+        res.status(500).json({ success: false, error: err.message });
     }
 });
 

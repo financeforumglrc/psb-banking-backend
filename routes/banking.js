@@ -7,21 +7,36 @@
 const express = require('express');
 const router = express.Router();
 const { bankingDb, db, userDb } = require('../services/database');
-const { authMiddleware, requireRole } = require('../middleware/auth');
-const paymentService = require('../services/paymentService');
-const cacheService = require('../services/cacheService');
+const { authMiddleware } = require('../middleware/auth');
+const { timingCheck } = require('../middleware/timingCheck');
+
+// Demo mode support
+const DEMO_MODE = process.env.DEMO_MODE === 'true';
+const { DEMO_USER } = require('../services/demoData');
+
+function isDemoUser(req) {
+    return DEMO_MODE && req.user?.id === 'demo-001';
+}
+
+function maybeBroadcastFraudAlert(req, amount, type) {
+    const wp = req.wealthProtection;
+    if (!wp || wp.riskScore < 60) return;
+    global.broadcastFraudAlert?.({
+        userId: req.user.id,
+        amount,
+        decision: wp.riskScore >= 80 ? 'BLOCKED' : 'FLAGGED',
+        score: wp.riskScore,
+        signals: wp.signals,
+        type,
+        timestamp: Date.now()
+    });
+}
 
 // ========== VALIDATION HELPERS ==========
 function validateRequired(body, fields) {
     const missing = fields.filter(f => body[f] === undefined || body[f] === null || body[f] === '');
     if (missing.length > 0) return { valid: false, error: `Missing required fields: ${missing.join(', ')}` };
     return { valid: true };
-}
-
-function invalidateBankingCache(userId) {
-    cacheService.delete(cacheService.getBusinessCashflowKey(userId));
-    cacheService.delete(cacheService.getBankingAccountsKey(userId));
-    cacheService.delete(cacheService.getBankingTransactionsKey(userId));
 }
 
 function validatePositiveNumber(value, name) {
@@ -32,18 +47,13 @@ function validatePositiveNumber(value, name) {
 }
 
 // ========== ACCOUNTS ==========
-router.get('/accounts', authMiddleware, async (req, res) => {
+router.get('/accounts', authMiddleware, (req, res) => {
     try {
-        const cacheKey = cacheService.getBankingAccountsKey(req.user.id);
-        const cached = await cacheService.get(cacheKey);
-        if (cached) {
-            return res.json({ success: true, data: cached, cached: true });
-        }
+        if (isDemoUser(req)) return res.json({ success: true, data: DEMO_USER.accounts });
         const accounts = bankingDb.getAccountsByUser(req.user.id);
-        await cacheService.set(cacheKey, accounts, cacheService.TTL.BANKING_ACCOUNTS);
         res.json({ success: true, data: accounts });
     } catch (err) {
-        res.status(500).json({ success: false, error: 'Internal server error' });
+        res.status(500).json({ success: false, error: err.message });
     }
 });
 
@@ -63,22 +73,25 @@ router.post('/accounts', authMiddleware, (req, res) => {
             branch: branch || 'Main Branch',
             status: 'active'
         });
-        invalidateBankingCache(req.user.id);
         res.json({ success: true, data: { id: result.lastInsertRowid, accountNumber: accNum } });
     } catch (err) {
-        res.status(500).json({ success: false, error: 'Internal server error' });
+        res.status(500).json({ success: false, error: err.message });
     }
 });
 
 router.get('/accounts/:id/balance', authMiddleware, (req, res) => {
     try {
+        if (isDemoUser(req)) {
+            const primary = DEMO_USER.accounts[0];
+            return res.json({ success: true, data: { balance: primary.balance, accountNumber: primary.account_number } });
+        }
         const account = bankingDb.getAccountById(req.params.id);
         if (!account || account.user_id !== req.user.id) {
             return res.status(404).json({ success: false, error: 'Account not found' });
         }
         res.json({ success: true, data: { balance: account.balance, accountNumber: account.account_number } });
     } catch (err) {
-        res.status(500).json({ success: false, error: 'Internal server error' });
+        res.status(500).json({ success: false, error: err.message });
     }
 });
 
@@ -95,7 +108,7 @@ router.patch('/accounts/:id/status', authMiddleware, (req, res) => {
         bankingDb.updateAccountStatus(req.params.id, status);
         res.json({ success: true, message: `Account status updated to ${status}` });
     } catch (err) {
-        res.status(500).json({ success: false, error: 'Internal server error' });
+        res.status(500).json({ success: false, error: err.message });
     }
 });
 
@@ -111,15 +124,19 @@ router.delete('/accounts/:id', authMiddleware, (req, res) => {
         bankingDb.deleteAccount(req.params.id);
         res.json({ success: true, message: 'Account closed successfully' });
     } catch (err) {
-        res.status(500).json({ success: false, error: 'Internal server error' });
+        res.status(500).json({ success: false, error: err.message });
     }
 });
 
 // ========== TRANSACTIONS ==========
 router.get('/transactions', authMiddleware, (req, res) => {
     try {
+        if (isDemoUser(req)) {
+            const txns = DEMO_USER.transactions;
+            return res.json({ success: true, count: txns.length, data: txns });
+        }
         const { limit = 100, type, startDate, endDate, accountId } = req.query;
-        const lim = Math.min(parseInt(limit) || 100, 1000);
+        const lim = parseInt(limit) || 100;
         let txns;
 
         if (accountId) {
@@ -134,28 +151,11 @@ router.get('/transactions', authMiddleware, (req, res) => {
 
         res.json({ success: true, count: txns.length, data: txns });
     } catch (err) {
-        res.status(500).json({ success: false, error: 'Failed to load transactions' });
+        res.status(500).json({ success: false, error: err.message });
     }
 });
 
-// MPIN verification (demo gatekeeper — configured via DEMO_MPIN env, no default)
-router.post('/verify-mpin', authMiddleware, (req, res) => {
-    try {
-        const { mpin } = req.body;
-        const expected = process.env.DEMO_MPIN;
-        if (!expected || !/^\d{6}$/.test(expected)) {
-            console.warn('DEMO_MPIN not configured or invalid; MPIN verification disabled.');
-            return res.status(503).json({ success: false, error: 'MPIN verification is not configured', code: 'MPIN_NOT_CONFIGURED' });
-        }
-        const valid = String(mpin).length === 6 && mpin === expected;
-        res.json({ success: true, valid });
-    } catch (err) {
-        console.error('MPIN verify error:', err);
-        res.status(500).json({ success: false, error: 'MPIN verification failed' });
-    }
-});
-
-router.post('/transactions', authMiddleware, (req, res) => {
+router.post('/transactions', authMiddleware, timingCheck, (req, res) => {
     try {
         const { type, amount, description, toAccount, fromAccount } = req.body;
         const amountCheck = validatePositiveNumber(amount, 'Amount');
@@ -182,8 +182,8 @@ router.post('/transactions', authMiddleware, (req, res) => {
                 description: description || `${type.toUpperCase()} Transaction`
             });
 
-            invalidateBankingCache(req.user.id);
-            return res.json({ success: true, data: { id: result.transactionId, referenceId: result.referenceId } });
+            maybeBroadcastFraudAlert(req, amountCheck.value, type);
+            return res.json({ success: true, data: { id: result.transactionId, referenceId: result.referenceId }, wealthProtection: req.wealthProtection });
         }
 
         // For credit: add to primary account (also atomic)
@@ -201,24 +201,25 @@ router.post('/transactions', authMiddleware, (req, res) => {
                 description: description || 'Credit Transaction'
             });
 
-            invalidateBankingCache(req.user.id);
-            return res.json({ success: true, data: { id: result.transactionId, referenceId: result.referenceId } });
+            maybeBroadcastFraudAlert(req, amountCheck.value, 'credit');
+            return res.json({ success: true, data: { id: result.transactionId, referenceId: result.referenceId }, wealthProtection: req.wealthProtection });
         }
     } catch (err) {
         if (err.message === 'Insufficient balance') {
             return res.status(400).json({ success: false, error: 'Insufficient balance' });
         }
-        res.status(500).json({ success: false, error: 'Internal server error' });
+        res.status(500).json({ success: false, error: err.message });
     }
 });
 
 // ========== BENEFICIARIES ==========
 router.get('/beneficiaries', authMiddleware, (req, res) => {
     try {
+        if (isDemoUser(req)) return res.json({ success: true, data: [] });
         const data = bankingDb.getBeneficiariesByUser(req.user.id);
         res.json({ success: true, data });
     } catch (err) {
-        res.status(500).json({ success: false, error: 'Internal server error' });
+        res.status(500).json({ success: false, error: err.message });
     }
 });
 
@@ -233,7 +234,7 @@ router.post('/beneficiaries', authMiddleware, (req, res) => {
         });
         res.json({ success: true, data: { id: result.lastInsertRowid } });
     } catch (err) {
-        res.status(500).json({ success: false, error: 'Internal server error' });
+        res.status(500).json({ success: false, error: err.message });
     }
 });
 
@@ -244,7 +245,7 @@ router.patch('/beneficiaries/:id', authMiddleware, (req, res) => {
         bankingDb.updateBeneficiary(req.params.id, req.body);
         res.json({ success: true, message: 'Beneficiary updated' });
     } catch (err) {
-        res.status(500).json({ success: false, error: 'Internal server error' });
+        res.status(500).json({ success: false, error: err.message });
     }
 });
 
@@ -255,17 +256,18 @@ router.delete('/beneficiaries/:id', authMiddleware, (req, res) => {
         bankingDb.deleteBeneficiary(req.params.id);
         res.json({ success: true, message: 'Beneficiary deleted' });
     } catch (err) {
-        res.status(500).json({ success: false, error: 'Internal server error' });
+        res.status(500).json({ success: false, error: err.message });
     }
 });
 
 // ========== CARDS ==========
 router.get('/cards', authMiddleware, (req, res) => {
     try {
+        if (isDemoUser(req)) return res.json({ success: true, data: [] });
         const data = bankingDb.getCardsByUser(req.user.id);
         res.json({ success: true, data });
     } catch (err) {
-        res.status(500).json({ success: false, error: 'Internal server error' });
+        res.status(500).json({ success: false, error: err.message });
     }
 });
 
@@ -287,7 +289,7 @@ router.post('/cards', authMiddleware, (req, res) => {
         });
         res.json({ success: true, data: { id: result.lastInsertRowid, cardNumber: cardNum } });
     } catch (err) {
-        res.status(500).json({ success: false, error: 'Internal server error' });
+        res.status(500).json({ success: false, error: err.message });
     }
 });
 
@@ -302,7 +304,7 @@ router.patch('/cards/:id/status', authMiddleware, (req, res) => {
         bankingDb.updateCardStatus(req.params.id, status);
         res.json({ success: true, message: 'Card status updated' });
     } catch (err) {
-        res.status(500).json({ success: false, error: 'Internal server error' });
+        res.status(500).json({ success: false, error: err.message });
     }
 });
 
@@ -314,7 +316,7 @@ router.patch('/cards/:id/limits', authMiddleware, (req, res) => {
         bankingDb.updateCardLimits(req.params.id, { limitDaily, limitMonthly });
         res.json({ success: true, message: 'Card limits updated' });
     } catch (err) {
-        res.status(500).json({ success: false, error: 'Internal server error' });
+        res.status(500).json({ success: false, error: err.message });
     }
 });
 
@@ -325,17 +327,18 @@ router.delete('/cards/:id', authMiddleware, (req, res) => {
         bankingDb.deleteCard(req.params.id);
         res.json({ success: true, message: 'Card removed' });
     } catch (err) {
-        res.status(500).json({ success: false, error: 'Internal server error' });
+        res.status(500).json({ success: false, error: err.message });
     }
 });
 
 // ========== BILLS ==========
 router.get('/bills', authMiddleware, (req, res) => {
     try {
+        if (isDemoUser(req)) return res.json({ success: true, data: [] });
         const data = bankingDb.getBillsByUser(req.user.id);
         res.json({ success: true, data });
     } catch (err) {
-        res.status(500).json({ success: false, error: 'Internal server error' });
+        res.status(500).json({ success: false, error: err.message });
     }
 });
 
@@ -350,7 +353,7 @@ router.post('/bills', authMiddleware, (req, res) => {
         });
         res.json({ success: true, data: { id: result.lastInsertRowid } });
     } catch (err) {
-        res.status(500).json({ success: false, error: 'Internal server error' });
+        res.status(500).json({ success: false, error: err.message });
     }
 });
 
@@ -361,7 +364,7 @@ router.patch('/bills/:id/status', authMiddleware, (req, res) => {
         bankingDb.updateBillStatus(req.params.id, req.body.status);
         res.json({ success: true, message: 'Bill status updated' });
     } catch (err) {
-        res.status(500).json({ success: false, error: 'Internal server error' });
+        res.status(500).json({ success: false, error: err.message });
     }
 });
 
@@ -372,7 +375,7 @@ router.patch('/bills/:id', authMiddleware, (req, res) => {
         bankingDb.updateBill(req.params.id, req.body);
         res.json({ success: true, message: 'Bill updated' });
     } catch (err) {
-        res.status(500).json({ success: false, error: 'Internal server error' });
+        res.status(500).json({ success: false, error: err.message });
     }
 });
 
@@ -383,7 +386,7 @@ router.delete('/bills/:id', authMiddleware, (req, res) => {
         bankingDb.deleteBill(req.params.id);
         res.json({ success: true, message: 'Bill deleted' });
     } catch (err) {
-        res.status(500).json({ success: false, error: 'Internal server error' });
+        res.status(500).json({ success: false, error: err.message });
     }
 });
 
@@ -413,17 +416,18 @@ router.post('/bills/:id/pay', authMiddleware, (req, res) => {
         if (err.message === 'Insufficient balance') {
             return res.status(400).json({ success: false, error: 'Insufficient balance' });
         }
-        res.status(500).json({ success: false, error: 'Internal server error' });
+        res.status(500).json({ success: false, error: err.message });
     }
 });
 
 // ========== SUBSCRIPTIONS ==========
 router.get('/subscriptions', authMiddleware, (req, res) => {
     try {
+        if (isDemoUser(req)) return res.json({ success: true, data: [] });
         const data = bankingDb.getSubscriptionsByUser(req.user.id);
         res.json({ success: true, data });
     } catch (err) {
-        res.status(500).json({ success: false, error: 'Internal server error' });
+        res.status(500).json({ success: false, error: err.message });
     }
 });
 
@@ -438,7 +442,7 @@ router.post('/subscriptions', authMiddleware, (req, res) => {
         });
         res.json({ success: true, data: { id: result.lastInsertRowid } });
     } catch (err) {
-        res.status(500).json({ success: false, error: 'Internal server error' });
+        res.status(500).json({ success: false, error: err.message });
     }
 });
 
@@ -449,7 +453,7 @@ router.patch('/subscriptions/:id', authMiddleware, (req, res) => {
         bankingDb.updateSubscription(req.params.id, req.body);
         res.json({ success: true, message: 'Subscription updated' });
     } catch (err) {
-        res.status(500).json({ success: false, error: 'Internal server error' });
+        res.status(500).json({ success: false, error: err.message });
     }
 });
 
@@ -460,17 +464,18 @@ router.delete('/subscriptions/:id', authMiddleware, (req, res) => {
         bankingDb.deleteSubscription(req.params.id);
         res.json({ success: true, message: 'Subscription cancelled' });
     } catch (err) {
-        res.status(500).json({ success: false, error: 'Internal server error' });
+        res.status(500).json({ success: false, error: err.message });
     }
 });
 
 // ========== GOALS ==========
 router.get('/goals', authMiddleware, (req, res) => {
     try {
+        if (isDemoUser(req)) return res.json({ success: true, data: DEMO_USER.goals });
         const data = bankingDb.getGoalsByUser(req.user.id);
         res.json({ success: true, data });
     } catch (err) {
-        res.status(500).json({ success: false, error: 'Internal server error' });
+        res.status(500).json({ success: false, error: err.message });
     }
 });
 
@@ -485,11 +490,11 @@ router.post('/goals', authMiddleware, (req, res) => {
         });
         res.json({ success: true, data: { id: result.lastInsertRowid } });
     } catch (err) {
-        res.status(500).json({ success: false, error: 'Internal server error' });
+        res.status(500).json({ success: false, error: err.message });
     }
 });
 
-router.patch('/goals/:id/contribute', authMiddleware, (req, res) => {
+router.patch('/goals/:id/contribute', authMiddleware, timingCheck, (req, res) => {
     try {
         const { amount } = req.body;
         const amountCheck = validatePositiveNumber(amount, 'Amount');
@@ -512,12 +517,12 @@ router.patch('/goals/:id/contribute', authMiddleware, (req, res) => {
         });
 
         bankingDb.updateGoalAmount(req.params.id, (goal.current_amount || 0) + amountCheck.value);
-        res.json({ success: true, data: { transactionId: result.transactionId, referenceId: result.referenceId } });
+        res.json({ success: true, data: { transactionId: result.transactionId, referenceId: result.referenceId }, wealthProtection: req.wealthProtection });
     } catch (err) {
         if (err.message === 'Insufficient balance') {
             return res.status(400).json({ success: false, error: 'Insufficient balance' });
         }
-        res.status(500).json({ success: false, error: 'Internal server error' });
+        res.status(500).json({ success: false, error: err.message });
     }
 });
 
@@ -528,7 +533,7 @@ router.patch('/goals/:id', authMiddleware, (req, res) => {
         bankingDb.updateGoal(req.params.id, req.body);
         res.json({ success: true, message: 'Goal updated' });
     } catch (err) {
-        res.status(500).json({ success: false, error: 'Internal server error' });
+        res.status(500).json({ success: false, error: err.message });
     }
 });
 
@@ -539,17 +544,18 @@ router.delete('/goals/:id', authMiddleware, (req, res) => {
         bankingDb.deleteGoal(req.params.id);
         res.json({ success: true, message: 'Goal deleted' });
     } catch (err) {
-        res.status(500).json({ success: false, error: 'Internal server error' });
+        res.status(500).json({ success: false, error: err.message });
     }
 });
 
 // ========== ASSETS ==========
 router.get('/assets', authMiddleware, (req, res) => {
     try {
+        if (isDemoUser(req)) return res.json({ success: true, data: DEMO_USER.assets });
         const data = bankingDb.getAssetsByUser(req.user.id);
         res.json({ success: true, data });
     } catch (err) {
-        res.status(500).json({ success: false, error: 'Internal server error' });
+        res.status(500).json({ success: false, error: err.message });
     }
 });
 
@@ -564,7 +570,7 @@ router.post('/assets', authMiddleware, (req, res) => {
         });
         res.json({ success: true, data: { id: result.lastInsertRowid } });
     } catch (err) {
-        res.status(500).json({ success: false, error: 'Internal server error' });
+        res.status(500).json({ success: false, error: err.message });
     }
 });
 
@@ -575,7 +581,7 @@ router.patch('/assets/:id', authMiddleware, (req, res) => {
         bankingDb.updateAsset(req.params.id, req.body);
         res.json({ success: true, message: 'Asset updated' });
     } catch (err) {
-        res.status(500).json({ success: false, error: 'Internal server error' });
+        res.status(500).json({ success: false, error: err.message });
     }
 });
 
@@ -586,17 +592,18 @@ router.delete('/assets/:id', authMiddleware, (req, res) => {
         bankingDb.deleteAsset(req.params.id);
         res.json({ success: true, message: 'Asset deleted' });
     } catch (err) {
-        res.status(500).json({ success: false, error: 'Internal server error' });
+        res.status(500).json({ success: false, error: err.message });
     }
 });
 
 // ========== LOANS ==========
 router.get('/loans', authMiddleware, (req, res) => {
     try {
+        if (isDemoUser(req)) return res.json({ success: true, data: [] });
         const data = bankingDb.getLoansByUser(req.user.id);
         res.json({ success: true, data });
     } catch (err) {
-        res.status(500).json({ success: false, error: 'Internal server error' });
+        res.status(500).json({ success: false, error: err.message });
     }
 });
 
@@ -620,7 +627,7 @@ router.post('/loans', authMiddleware, (req, res) => {
         });
         res.json({ success: true, data: { id: result.lastInsertRowid, emiAmount: emi, totalPayable } });
     } catch (err) {
-        res.status(500).json({ success: false, error: 'Internal server error' });
+        res.status(500).json({ success: false, error: err.message });
     }
 });
 
@@ -655,21 +662,22 @@ router.patch('/loans/:id/pay', authMiddleware, (req, res) => {
         if (err.message === 'Insufficient balance') {
             return res.status(400).json({ success: false, error: 'Insufficient balance' });
         }
-        res.status(500).json({ success: false, error: 'Internal server error' });
+        res.status(500).json({ success: false, error: err.message });
     }
 });
 
 // ========== RECURRING PAYMENTS (SIPs / Auto-Debits) ==========
 router.get('/recurring', authMiddleware, (req, res) => {
     try {
+        if (isDemoUser(req)) return res.json({ success: true, data: [] });
         const data = bankingDb.getRecurringByUser(req.user.id);
         res.json({ success: true, data });
     } catch (err) {
-        res.status(500).json({ success: false, error: 'Internal server error' });
+        res.status(500).json({ success: false, error: err.message });
     }
 });
 
-router.post('/recurring', authMiddleware, (req, res) => {
+router.post('/recurring', authMiddleware, timingCheck, (req, res) => {
     try {
         const check = validateRequired(req.body, ['name', 'amount']);
         if (!check.valid) return res.status(400).json({ success: false, error: check.error });
@@ -678,9 +686,9 @@ router.post('/recurring', authMiddleware, (req, res) => {
         const result = bankingDb.createRecurring({
             userId: req.user.id, name, amount, frequency, category, accountId, beneficiaryId, startDate, endDate, nextExecution
         });
-        res.json({ success: true, data: { id: result.lastInsertRowid } });
+        res.json({ success: true, data: { id: result.lastInsertRowid }, wealthProtection: req.wealthProtection });
     } catch (err) {
-        res.status(500).json({ success: false, error: 'Internal server error' });
+        res.status(500).json({ success: false, error: err.message });
     }
 });
 
@@ -691,7 +699,7 @@ router.patch('/recurring/:id', authMiddleware, (req, res) => {
         bankingDb.updateRecurring(req.params.id, req.body);
         res.json({ success: true, message: 'Recurring payment updated' });
     } catch (err) {
-        res.status(500).json({ success: false, error: 'Internal server error' });
+        res.status(500).json({ success: false, error: err.message });
     }
 });
 
@@ -702,226 +710,15 @@ router.delete('/recurring/:id', authMiddleware, (req, res) => {
         bankingDb.deleteRecurring(req.params.id);
         res.json({ success: true, message: 'Recurring payment cancelled' });
     } catch (err) {
-        res.status(500).json({ success: false, error: 'Internal server error' });
-    }
-});
-
-// Execute a single SIP / auto-debit installment now and update portfolio + next execution date
-router.post('/recurring/:id/execute', authMiddleware, (req, res) => {
-    try {
-        const rec = db.prepare('SELECT * FROM recurring_payments WHERE id = ? AND user_id = ?').get(req.params.id, req.user.id);
-        if (!rec) return res.status(404).json({ success: false, error: 'Recurring payment not found' });
-        if (rec.status !== 'active') return res.status(400).json({ success: false, error: 'SIP is not active' });
-
-        const accounts = bankingDb.getAccountsByUser(req.user.id);
-        let account = accounts.find(a => a.status === 'active' && a.id === rec.account_id);
-        if (!account) account = accounts.find(a => a.status === 'active');
-        if (!account) return res.status(400).json({ success: false, error: 'No active account found' });
-
-        if (Number(account.balance) < Number(rec.amount)) {
-            return res.status(400).json({ success: false, error: 'Insufficient balance' });
-        }
-
-        // Debit bank account
-        const transfer = bankingDb.executeTransfer({
-            fromAccountId: account.id,
-            toAccountId: null,
-            amount: Number(rec.amount),
-            userId: req.user.id,
-            type: 'sip_debit',
-            description: `SIP — ${rec.name}`
-        });
-
-        // Credit portfolio / asset
-        const assets = bankingDb.getAssetsByUser(req.user.id);
-        const assetName = rec.name;
-        const assetType = rec.category || 'mutual_fund';
-        const existingAsset = assets.find(a => a.name === assetName && a.asset_type === assetType);
-        if (existingAsset) {
-            bankingDb.updateAsset(existingAsset.id, { value: Number(existingAsset.value) + Number(rec.amount) });
-        } else {
-            bankingDb.createAsset({
-                userId: req.user.id,
-                name: assetName,
-                assetType,
-                value: Number(rec.amount),
-                liquidity: 'medium',
-                returns: null
-            });
-        }
-
-        // Advance next execution date
-        const next = new Date(rec.next_execution || new Date());
-        const freq = (rec.frequency || 'monthly').toLowerCase();
-        if (freq === 'weekly') next.setDate(next.getDate() + 7);
-        else if (freq === 'quarterly') next.setMonth(next.getMonth() + 3);
-        else if (freq === 'yearly') next.setFullYear(next.getFullYear() + 1);
-        else next.setMonth(next.getMonth() + 1); // monthly default
-
-        bankingDb.updateRecurring(rec.id, { nextExecution: next.toISOString().split('T')[0] });
-
-        res.json({
-            success: true,
-            data: {
-                transactionId: transfer.transactionId,
-                referenceId: transfer.referenceId,
-                nextExecution: next.toISOString().split('T')[0],
-                amount: Number(rec.amount)
-            }
-        });
-    } catch (err) {
-        res.status(500).json({ success: false, error: 'Internal server error' });
-    }
-});
-
-// ========== RAZORPAY PAYMENTS (Test Mode) ==========
-router.get('/payments/config', authMiddleware, (req, res) => {
-    try {
-        res.json({
-            success: true,
-            data: {
-                keyId: process.env.RAZORPAY_KEY_ID || null,
-                enabled: paymentService.isConfigured()
-            }
-        });
-    } catch (err) {
-        res.status(500).json({ success: false, error: 'Internal server error' });
-    }
-});
-
-router.post('/payments/create-order', authMiddleware, async (req, res) => {
-    try {
-        const { amount, currency, receipt, notes } = req.body;
-        const amountCheck = validatePositiveNumber(amount, 'Amount');
-        if (!amountCheck.valid) return res.status(400).json({ success: false, error: amountCheck.error });
-
-        const order = await paymentService.createPaymentOrder({
-            amount: amountCheck.value,
-            currency: currency || 'INR',
-            receipt: receipt || `rcpt_${req.user.id}_${Date.now()}`,
-            notes: {
-                ...(notes || {}),
-                userId: req.user.id
-            }
-        });
-
-        res.json({ success: true, data: order });
-    } catch (err) {
-        res.status(500).json({ success: false, error: 'Internal server error' });
-    }
-});
-
-router.post('/payments/verify', authMiddleware, async (req, res) => {
-    try {
-        const { razorpayPaymentId, razorpayOrderId, razorpaySignature, amount, description, payee } = req.body;
-        if (!razorpayOrderId || !razorpayPaymentId) {
-            return res.status(400).json({ success: false, error: 'razorpayOrderId and razorpayPaymentId are required' });
-        }
-
-        const isValid = await paymentService.verifyPayment(razorpayPaymentId, razorpayOrderId, razorpaySignature || '');
-        if (!isValid) {
-            return res.status(400).json({ success: false, error: 'Invalid payment signature' });
-        }
-
-        // Record the successful payment as a bank transaction (fallback mode also records)
-        const amountCheck = validatePositiveNumber(amount, 'Amount');
-        if (!amountCheck.valid) return res.status(400).json({ success: false, error: amountCheck.error });
-
-        const accounts = bankingDb.getAccountsByUser(req.user.id);
-        const primary = accounts.find(a => a.status === 'active') || accounts[0];
-        if (!primary) return res.status(400).json({ success: false, error: 'No active account found' });
-
-        const result = bankingDb.executeTransfer({
-            fromAccountId: primary.id,
-            toAccountId: null,
-            amount: amountCheck.value,
-            userId: req.user.id,
-            type: 'upi',
-            description: description || `UPI Payment — ${payee || 'Merchant'}`
-        });
-
-        res.json({
-            success: true,
-            data: {
-                verified: true,
-                transactionId: result.transactionId,
-                referenceId: result.referenceId,
-                razorpayPaymentId,
-                razorpayOrderId
-            }
-        });
-    } catch (err) {
-        if (err.message === 'Insufficient balance') {
-            return res.status(400).json({ success: false, error: 'Insufficient balance' });
-        }
-        res.status(500).json({ success: false, error: 'Internal server error' });
-    }
-});
-
-// ========== RAZORPAY PLANS & SUBSCRIPTIONS ==========
-router.get('/payments/plans', (req, res) => {
-    try {
-        res.json({ success: true, data: paymentService.getPlans() });
-    } catch (err) {
-        res.status(500).json({ success: false, error: 'Internal server error' });
-    }
-});
-
-router.post('/payments/subscription', authMiddleware, async (req, res) => {
-    try {
-        const { planId } = req.body;
-        if (!planId || !paymentService.plans[planId]) {
-            return res.status(400).json({ success: false, error: 'Valid planId is required' });
-        }
-        const subscription = await paymentService.createSubscription(planId, req.user.id);
-        res.json({ success: true, data: subscription });
-    } catch (err) {
-        res.status(500).json({ success: false, error: 'Internal server error' });
-    }
-});
-
-// ========== RAZORPAY WEBHOOK ==========
-// NOTE: This route expects the raw request body. server.js mounts an
-// express.raw() parser for /api/v1/banking/payments/webhook *before* the
-// global express.json() middleware so signature verification works.
-router.post('/payments/webhook', async (req, res) => {
-    try {
-        const signature = req.headers['x-razorpay-signature'];
-        const body = Buffer.isBuffer(req.body) ? req.body.toString() : JSON.stringify(req.body);
-        const isValid = paymentService.verifyWebhookSignature(body, signature);
-        if (!isValid) {
-            return res.status(400).json({ success: false, error: 'Invalid webhook signature' });
-        }
-
-        const event = Buffer.isBuffer(req.body) ? JSON.parse(req.body.toString()) : req.body;
-        console.log('Razorpay webhook received:', event.event, event.payload?.payment?.entity?.id);
-
-        // Persist a generic webhook event log. In production, drive state machines
-        // here (mark orders paid, activate subscriptions, send emails, etc.).
-        if (bankingDb.createAuditLog) {
-            bankingDb.createAuditLog({
-                userId: event.payload?.payment?.entity?.notes?.userId || null,
-                action: 'WEBHOOK',
-                entityType: 'payment',
-                entityId: event.payload?.payment?.entity?.id || null,
-                oldValue: null,
-                newValue: JSON.stringify({ event: event.event, status: event.payload?.payment?.entity?.status }),
-                ipAddress: req.ip,
-                userAgent: req.headers['user-agent'] || ''
-            });
-        }
-
-        res.json({ success: true, received: true });
-    } catch (err) {
-        console.error('Razorpay webhook error:', err.message);
-        res.status(500).json({ success: false, error: 'Internal server error' });
+        res.status(500).json({ success: false, error: err.message });
     }
 });
 
 // ========== AUDIT LOGS ==========
 router.get('/audit', authMiddleware, (req, res) => {
     try {
-        const limit = Math.min(parseInt(req.query.limit) || 100, 1000);
+        if (isDemoUser(req)) return res.json({ success: true, data: [] });
+        const limit = parseInt(req.query.limit) || 100;
         const rows = bankingDb.getAuditLogsByUser(req.user.id, limit);
         // Map DB columns to frontend expected shape (details = human-readable summary)
         const data = rows.map(row => {
@@ -951,13 +748,31 @@ router.get('/audit', authMiddleware, (req, res) => {
         });
         res.json({ success: true, data });
     } catch (err) {
-        res.status(500).json({ success: false, error: 'Internal server error' });
+        res.status(500).json({ success: false, error: err.message });
     }
 });
 
 // ========== STATEMENTS ==========
 router.get('/statements/:accountId', authMiddleware, (req, res) => {
     try {
+        if (isDemoUser(req)) {
+            const primary = DEMO_USER.accounts[0];
+            const txns = DEMO_USER.transactions;
+            const credits = txns.filter(t => t.type === 'credit').reduce((s, t) => s + t.amount, 0);
+            const debits = txns.filter(t => t.type !== 'credit').reduce((s, t) => s + t.amount, 0);
+            return res.json({
+                success: true,
+                data: {
+                    account: primary,
+                    period: { start: txns[0]?.date, end: txns[txns.length - 1]?.date },
+                    openingBalance: primary.balance + debits - credits,
+                    closingBalance: primary.balance,
+                    totalCredits: credits,
+                    totalDebits: debits,
+                    transactions: txns
+                }
+            });
+        }
         const account = bankingDb.getAccountById(req.params.accountId);
         if (!account || account.user_id !== req.user.id) {
             return res.status(404).json({ success: false, error: 'Account not found' });
@@ -987,13 +802,67 @@ router.get('/statements/:accountId', authMiddleware, (req, res) => {
             }
         });
     } catch (err) {
-        res.status(500).json({ success: false, error: 'Internal server error' });
+        res.status(500).json({ success: false, error: err.message });
     }
 });
 
 // ========== DASHBOARD SUMMARY ==========
 router.get('/dashboard', authMiddleware, (req, res) => {
     try {
+        if (isDemoUser(req)) {
+            const accounts = DEMO_USER.accounts;
+            const transactions = DEMO_USER.transactions.slice(0, 100);
+            const goals = DEMO_USER.goals;
+            const assets = DEMO_USER.assets;
+            const loans = [];
+            const bills = [];
+            const cards = [];
+            const subscriptions = [];
+            const beneficiaries = [];
+            const recurring = [];
+
+            const totalBalance = accounts.reduce((sum, a) => sum + a.balance, 0);
+            const totalAssets = assets.reduce((sum, a) => sum + a.value, 0);
+            const netWorth = totalBalance + totalAssets;
+            const monthlySpend = transactions
+                .filter(t => ['debit', 'upi', 'transfer', 'neft', 'imps'].includes(t.type) && new Date(t.created_at) > new Date(Date.now() - 30 * 86400000))
+                .reduce((sum, t) => sum + t.amount, 0);
+            const monthlyIncome = transactions
+                .filter(t => t.type === 'credit' && new Date(t.created_at) > new Date(Date.now() - 30 * 86400000))
+                .reduce((sum, t) => sum + t.amount, 0);
+
+            return res.json({
+                success: true,
+                data: {
+                    netWorth,
+                    totalBalance,
+                    totalAssets,
+                    monthlySpend,
+                    monthlyIncome,
+                    monthlyEmi: 0,
+                    totalLoanOutstanding: 0,
+                    accountCount: accounts.length,
+                    transactionCount: transactions.length,
+                    goalCount: goals.length,
+                    upcomingBills: 0,
+                    cards: 0,
+                    subscriptions: 0,
+                    beneficiaries: 0,
+                    loans: 0,
+                    recurringCount: 0,
+                    kycStatus: 'verified',
+                    recentTransactions: transactions.slice(0, 5),
+                    accounts,
+                    goals,
+                    bills,
+                    assets,
+                    cards,
+                    subscriptions,
+                    loans,
+                    recurring
+                }
+            });
+        }
         const accounts = bankingDb.getAccountsByUser(req.user.id);
         const transactions = bankingDb.getTransactionsByUser(req.user.id, 5);
         const goals = bankingDb.getGoalsByUser(req.user.id);
@@ -1054,25 +923,25 @@ router.get('/dashboard', authMiddleware, (req, res) => {
             }
         });
     } catch (err) {
-        res.status(500).json({ success: false, error: 'Internal server error' });
+        res.status(500).json({ success: false, error: err.message });
     }
 });
 
-// ========== SEED (admin-only demo data seeding) ==========
+// ========== SEED (for judge demos) ==========
 function resolveDemoUser(req) {
-    if (req.user && req.user.role !== 'admin' && req.user.id) return req.user;
-    const targetEmail = req.body?.email || req.query?.email || 'demo@psb.co.in';
-    let user = userDb.findByEmail(targetEmail);
+    if (req.user && req.user.id) return req.user;
+    const devEmail = req.headers['x-dev-user-email'] || 'demo@psb.co.in';
+    let user = userDb.findByEmail(devEmail);
     if (!user) {
         const bcrypt = require('bcryptjs');
         const id = require('crypto').randomUUID();
-        userDb.create({ id, email: targetEmail, password: bcrypt.hashSync('demo123', 12), name: targetEmail.split('@')[0], role: 'user', tier: 'premium' });
-        user = userDb.findByEmail(targetEmail);
+        userDb.create({ id, email: devEmail, password: bcrypt.hashSync('demo123', 12), name: devEmail.split('@')[0], role: 'user', tier: 'premium' });
+        user = userDb.findByEmail(devEmail);
     }
     return user;
 }
 
-router.post('/seed', authMiddleware, requireRole('admin'), (req, res) => {
+router.post('/seed', (req, res) => {
     try {
         const user = resolveDemoUser(req);
         const userId = user.id;
@@ -1274,90 +1143,41 @@ router.post('/seed', authMiddleware, requireRole('admin'), (req, res) => {
 
         res.json({ success: true, message: 'Judge demo data seeded successfully' });
     } catch (err) {
-        res.status(500).json({ success: false, error: 'Internal server error' });
+        res.status(500).json({ success: false, error: err.message });
     }
 });
 
-// ========== BUSINESS / SME CASH FLOW ANALYZER ==========
-router.get('/business/cashflow', authMiddleware, async (req, res) => {
+/**
+ * @route   POST /api/v1/banking/assets/appraise-vision
+ * @desc    Mock computer-vision appraisal of a physical asset photo
+ * @access  Private
+ */
+router.post('/assets/appraise-vision', authMiddleware, (req, res) => {
     try {
-        const cacheKey = cacheService.getBusinessCashflowKey(req.user.id);
-        const cached = await cacheService.get(cacheKey);
-        if (cached) {
-            return res.json({ success: true, data: cached, cached: true });
+        const { imageBase64 } = req.body;
+        if (!imageBase64 || typeof imageBase64 !== 'string') {
+            return res.status(400).json({ success: false, error: 'imageBase64 string is required' });
         }
 
-        const transactions = bankingDb.getTransactionsByUser(req.user.id, 1000);
-
-        // Aggregate by YYYY-MM
-        const monthlyMap = new Map();
-        const now = new Date();
-        for (let i = 5; i >= 0; i--) {
-            const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
-            const key = d.toISOString().slice(0, 7);
-            monthlyMap.set(key, { month: key, inflow: 0, outflow: 0 });
-        }
-
-        transactions.forEach(tx => {
-            if (!tx.created_at) return;
-            const key = tx.created_at.slice(0, 7);
-            if (!monthlyMap.has(key)) return;
-            const entry = monthlyMap.get(key);
-            const amount = Number(tx.amount) || 0;
-            // Treat credits/received as inflow, debits/payments as outflow
-            if (['credit', 'deposit', 'refund', 'interest'].includes(tx.type) || amount < 0) {
-                entry.inflow += Math.abs(amount);
-            } else {
-                entry.outflow += Math.abs(amount);
-            }
-        });
-
-        const cashflow = Array.from(monthlyMap.values());
-        const totalInflow = cashflow.reduce((s, c) => s + c.inflow, 0);
-        const totalOutflow = cashflow.reduce((s, c) => s + c.outflow, 0);
-        const surplus = totalInflow - totalOutflow;
-        const avgMonthlyInflow = totalInflow / cashflow.length || 1;
-        const avgMonthlyOutflow = totalOutflow / cashflow.length || 1;
-        const liquidityRatio = avgMonthlyOutflow > 0 ? avgMonthlyInflow / avgMonthlyOutflow : 0;
-
-        // Risk flags
-        const negativeMonths = cashflow.filter(c => c.inflow < c.outflow).length;
-        const riskFlags = [];
-        if (negativeMonths >= 2) riskFlags.push({ level: 'warning', message: `${negativeMonths} months had negative cash flow` });
-        if (liquidityRatio < 1.2) riskFlags.push({ level: 'warning', message: 'Liquidity ratio is below healthy threshold (1.2x)' });
-        if (surplus < 0) riskFlags.push({ level: 'danger', message: 'Net 6-month cash flow is negative' });
-        if (riskFlags.length === 0) riskFlags.push({ level: 'good', message: 'Cash flow is healthy' });
-
-        // Treasury recommendations based on surplus
-        const recommendations = [];
-        if (surplus > 100000) {
-            recommendations.push({ product: '7-Day FD', amount: surplus * 0.4, reason: 'Park short-term surplus safely' });
-            recommendations.push({ product: 'Liquid Mutual Fund', amount: surplus * 0.3, reason: 'High liquidity with better returns' });
-            recommendations.push({ product: 'T-Bills', amount: surplus * 0.2, reason: 'Government-backed, low risk' });
-        } else if (surplus > 0) {
-            recommendations.push({ product: 'Sweep-in FD', amount: surplus, reason: 'Auto-liquidate when needed' });
-        } else {
-            recommendations.push({ product: 'Working Capital Loan', amount: Math.abs(surplus), reason: 'Bridge temporary shortfall' });
-        }
-
-        const result = {
-            cashflow,
-            totalInflow,
-            totalOutflow,
-            surplus,
-            avgMonthlyInflow,
-            avgMonthlyOutflow,
-            liquidityRatio: Number(liquidityRatio.toFixed(2)),
-            negativeMonths,
-            riskFlags,
-            recommendations
-        };
-
-        await cacheService.set(cacheKey, result, cacheService.TTL.BUSINESS_CASHFLOW);
-        res.json({ success: true, data: result });
-    } catch (err) {
-        console.error('Business cashflow error:', err);
-        res.status(500).json({ success: false, error: 'Internal server error' });
+        // Simulate AI processing time
+        setTimeout(() => {
+            res.json({
+                success: true,
+                message: 'Asset appraised successfully',
+                data: {
+                    assetType: 'Gold Jewelry (Detected)',
+                    weightGrams: 15.2,
+                    purity: '22K (91.6%)',
+                    marketValue: 138500,
+                    confidence: 0.94,
+                    currency: 'INR',
+                    appraisedAt: new Date().toISOString(),
+                }
+            });
+        }, 2000);
+    } catch (error) {
+        console.error('Vision appraisal error:', error);
+        res.status(500).json({ success: false, error: 'Vision appraisal failed' });
     }
 });
 

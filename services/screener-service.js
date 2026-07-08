@@ -13,7 +13,18 @@
  */
 
 const axios = require('axios');
-const cacheService = require('./cacheService');
+
+// ── In-memory cache ───────────────────────────────────────────────────────────
+const cache      = new Map();
+const CACHE_TTL  = 15 * 60 * 1000; // 15 minutes
+
+function fromCache(key) {
+    const e = cache.get(key);
+    if (!e) return null;
+    if (Date.now() - e.ts > CACHE_TTL) { cache.delete(key); return null; }
+    return e.data;
+}
+function toCache(key, data) { cache.set(key, { data, ts: Date.now() }); }
 
 // ── HTTP client ───────────────────────────────────────────────────────────────
 const http = axios.create({
@@ -148,8 +159,8 @@ const yoy = arr => {
 // ── Main scraper ──────────────────────────────────────────────────────────────
 async function scrapeCompany(ticker) {
     const clean = ticker.replace(/\.NS$/i, '').replace(/\.BO$/i, '').toUpperCase();
-    const cKey  = cacheService.getScreenerCompanyKey(clean);
-    const hit   = await cacheService.get(cKey);
+    const cKey  = `company:${clean}`;
+    const hit   = fromCache(cKey);
     if (hit) return { ...hit, cached: true };
 
     const url = `https://www.screener.in/company/${clean}/`;
@@ -260,14 +271,14 @@ async function scrapeCompany(ticker) {
         fetchedAt: new Date().toISOString()
     };
 
-    await cacheService.set(cKey, result, cacheService.TTL.SCREENER_COMPANY);
+    toCache(cKey, result);
     return result;
 }
 
 // ── Screener.in autocomplete API ──────────────────────────────────────────────
 async function searchCompanies(query) {
-    const cKey = `screener:search:${query.toLowerCase().trim()}`;
-    const hit  = await cacheService.get(cKey);
+    const cKey = `search:${query.toLowerCase().trim()}`;
+    const hit  = fromCache(cKey);
     if (hit) return { ...hit, cached: true };
 
     try {
@@ -281,7 +292,7 @@ async function searchCompanies(query) {
             url:    x.url    || ''
         }));
         const out = { query, results };
-        await cacheService.set(cKey, out, cacheService.TTL.SCREENER_COMPANY);
+        toCache(cKey, out);
         return out;
     } catch (err) {
         throw new Error(`Screener.in search failed: ${err.message}`);

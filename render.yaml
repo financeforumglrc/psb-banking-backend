@@ -1,6 +1,6 @@
 services:
   - type: web
-    name: psb-securewealth-backend
+    name: psb-banking-backend
     runtime: node
     plan: free
     buildCommand: npm install
@@ -8,71 +8,19 @@ services:
     envVars:
       - key: NODE_ENV
         value: production
-      - key: FORCE_SEED
-        value: "1"
       - key: PORT
         value: 10000
-      - key: TRUST_PROXY
-        value: "1"
-      - key: CORS_ORIGINS
-        value: "https://psb-securewealth-frontend.onrender.com"
-      # Secrets are auto-generated on first deploy. Set known values in the Render dashboard if needed.
       - key: JWT_SECRET
         generateValue: true
       - key: ADMIN_ID
-        value: TEAM EXCELLENT MINDS
+        value: admin
       - key: ADMIN_PASSWORD
-        value: "123456@#Dd"
-      - key: ENCRYPTION_KEY
-        generateValue: true
+        value: dsf-admin-2024
       - key: GEMINI_API_KEY
         value: 
-      - key: SENDGRID_API_KEY
-        value: 
-      - key: SENDGRID_FROM_EMAIL
-        value: sdeepu70gg@gmail.com
-      - key: SENDGRID_FROM_NAME
-        value: PSB SecureWealth
-      # Redis caching (Upstash free tier recommended). Leave empty to use in-memory fallback.
-      - key: REDIS_URL
-        value: 
-      # Razorpay test-mode payment keys. Set in Render dashboard; leave empty for simulation mode.
-      - key: RAZORPAY_KEY_ID
-        value: 
-      - key: RAZORPAY_KEY_SECRET
-        value: 
-      - key: RAZORPAY_WEBHOOK_SECRET
-        value: 
-      # Optional Razorpay subscription plan IDs.
-      - key: RAZORPAY_PLAN_FREE
-        value: 
-      - key: RAZORPAY_PLAN_BASIC
-        value: 
-      - key: RAZORPAY_PLAN_PREMIUM
-        value: 
-      - key: RAZORPAY_PLAN_ENTERPRISE
-        value: 
-      # Set this in the Render dashboard from the PostgreSQL service.
-      # Leave it empty here to avoid committing a secret connection string.
-      - key: DATABASE_URL
-        value: 
-      # SQLite path (default). Use a Render Disk or PostgreSQL for persistence.
       - key: DATABASE_PATH
-        value: ./data/financial.db
-      # --- SETU Account Aggregator sandbox ---
-      # Set these in the Render dashboard; do not commit secrets to Git.
-      # - key: SETU_AA_BASE_URL
-      #   value: https://fiu-sandbox.setu.co
-      # - key: SETU_AA_CLIENT_ID
-      #   value: 
-      # - key: SETU_AA_CLIENT_SECRET
-      #   value: 
-      # - key: SETU_AA_PRODUCT_INSTANCE_ID
-      #   value: 
-      # - key: SETU_AA_REDIRECT_URL
-      #   value: https://psb-securewealth-frontend.onrender.com/aa/callback
-      # - key: SETU_AA_TEST_PHONE
-      #   value: 9999999999
-      # - key: SETU_PSB_FIP_ID
-      #   value: PSB-FIP-001
-    healthCheckPath: /api/v1/health
+        value: /data/ds_financial.db
+    disk:
+      name: sqlite-data
+      mountPath: /data
+      sizeGB: 1

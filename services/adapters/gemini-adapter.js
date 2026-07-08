@@ -6,12 +6,12 @@
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 
 function getClient(apiKey) {
-    const key = apiKey || process.env.GOOGLE_API_KEY || process.env.GEMINI_API_KEY;
-    if (!key) throw new Error('GOOGLE_API_KEY / GEMINI_API_KEY not configured');
+    const key = apiKey || process.env.GEMINI_API_KEY;
+    if (!key) throw new Error('GEMINI_API_KEY not configured');
     return new GoogleGenerativeAI(key);
 }
 
-const MOCK_MODE = process.env.AI_MOCK_MODE === 'true' || (!process.env.GOOGLE_API_KEY && !process.env.GEMINI_API_KEY);
+const MOCK_MODE = process.env.AI_MOCK_MODE === 'true' || !process.env.GEMINI_API_KEY;
 
 function mockResponse(type, input) {
     if (type === 'chat') {
@@ -49,10 +49,18 @@ async function extract({ pdfBuffer, prompt, model = 'gemini-2.5-flash', apiKey }
     const genAI = getClient(apiKey);
     const generativeModel = genAI.getGenerativeModel({ model });
 
-    const result = await generativeModel.generateContent([
-        { inlineData: { mimeType: 'application/pdf', data: pdfBuffer.toString('base64') } },
-        prompt,
-    ]);
+    let result;
+    try {
+        result = await generativeModel.generateContent([
+            { inlineData: { mimeType: 'application/pdf', data: pdfBuffer.toString('base64') } },
+            prompt,
+        ]);
+    } catch (err) {
+        if (err.message && err.message.includes('does not support image input')) {
+            throw new Error('This AI model only supports PDF files. Please upload a valid PDF document.');
+        }
+        throw err;
+    }
 
     const text = result.response.text();
     const json = JSON.parse(text.replace(/^```json\s*|\s*```$/g, ''));

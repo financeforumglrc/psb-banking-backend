@@ -5,7 +5,19 @@
 
 const express = require('express');
 const axios = require('axios');
+const crypto = require('crypto');
 const router = express.Router();
+
+// Database access for AI response cache
+const { db } = require('../services/database');
+
+// Demo mode support
+const DEMO_MODE = process.env.DEMO_MODE === 'true';
+const { DEMO_USER } = require('../services/demoData');
+
+function isDemoUser(req) {
+    return DEMO_MODE && req.user?.id === 'demo-001';
+}
 
 // AI Provider Configuration
 const AI_PROVIDERS = {
@@ -144,9 +156,13 @@ async function callLegacyAI(prompt, options = {}) {
  * @patent  PATENT #7: Multi-Provider AI Orchestrator
  * @access  Private
  */
+function getCacheKey(prompt, userId) {
+    return crypto.createHash('sha256').update(userId + '::' + prompt.slice(0, 500)).digest('hex');
+}
+
 router.post('/ask', async (req, res) => {
     try {
-        const { question, provider, model, context } = req.body;
+        const { question, provider, model, context, useCache = true } = req.body;
 
         if (!question) {
             return res.status(400).json({
@@ -162,29 +178,50 @@ router.post('/ask', async (req, res) => {
             enhancedPrompt = `Context: ${sanitizePromptInput(JSON.stringify(context))}\n\nQuestion: ${sanitizePromptInput(question)}`;
         }
 
+        const userId = req.user?.id || req.headers['x-device-id'] || 'anon';
+        const cacheKey = getCacheKey(enhancedPrompt, userId);
+        const ttlMinutes = /market|stock|price|nifty|sensex/i.test(question) ? 5 : 60;
+
+        if (useCache) {
+            const cached = db.prepare(
+                `SELECT response FROM ai_cache WHERE cache_key = ? AND created_at > datetime('now', '-${ttlMinutes} minutes')`
+            ).get(cacheKey);
+            if (cached) {
+                const parsed = JSON.parse(cached.response);
+                return res.json({ success: true, patent: 'PAT-007', data: parsed, cached: true });
+            }
+        }
+
         // Call AI with orchestration
         const result = await callLegacyAI(enhancedPrompt, { provider, model });
+        const responsePayload = {
+            answer: result.content,
+            provider: result.provider,
+            model: result.model,
+            usage: result.usage,
+            timestamp: result.timestamp
+        };
+
+        db.prepare(`INSERT OR REPLACE INTO ai_cache (cache_key, response) VALUES (?, ?)`)
+            .run(cacheKey, JSON.stringify(responsePayload));
 
         res.json({
             success: true,
             patent: 'PAT-007',
-            data: {
-                answer: result.content,
-                provider: result.provider,
-                model: result.model,
-                usage: result.usage,
-                timestamp: result.timestamp
-            }
+            data: responsePayload,
+            cached: false
         });
     } catch (error) {
         console.error('AI ask error:', error);
         res.status(500).json({
             success: false,
             error: 'AI service temporarily unavailable',
-            code: 'AI_ERROR'
+            code: 'AI_ERROR',
+            message: error.message
         });
     }
 });
+
 
 /**
  * @route   POST /api/v1/ai/summarize
@@ -350,7 +387,7 @@ router.post('/test', async (req, res) => {
         console.error('AI test error:', error);
         res.status(500).json({
             success: false,
-            error: 'AI test failed',
+            error: 'AI test failed: ' + error.message,
             code: 'AI_TEST_ERROR',
         });
     }
@@ -376,7 +413,7 @@ router.post('/test-key', async (req, res) => {
 
         res.json({ success: true, valid: true, provider, response: result.text });
     } catch (error) {
-        res.json({ success: true, valid: false, error: 'API key validation failed' });
+        res.json({ success: true, valid: false, error: error.message });
     }
 });
 
@@ -440,9 +477,6 @@ ${JSON.stringify(model_snapshot || {}, null, 2).substring(0, 40000)}
                 byok,
             });
 
-            deviceDb.increment(deviceId, 'chat');
-            if (!byok) quotaDb.increment('chat');
-
             const stream = streamResult.stream;
             for await (const chunk of stream) {
                 const text = chunk.text?.() || chunk.choices?.[0]?.delta?.content || '';
@@ -466,7 +500,7 @@ ${JSON.stringify(model_snapshot || {}, null, 2).substring(0, 40000)}
         }
     } catch (error) {
         console.error('AI chat error:', error);
-        res.status(500).json({ success: false, error: 'Chat failed' });
+        res.status(500).json({ success: false, error: 'Chat failed: ' + error.message });
     }
 });
 
@@ -503,7 +537,7 @@ router.post('/explain-cell', async (req, res) => {
         res.json({ success: true, explanation: result.json, provider: result.provider });
     } catch (error) {
         console.error('Explain cell error:', error);
-        res.status(500).json({ success: false, error: 'Explanation failed' });
+        res.status(500).json({ success: false, error: 'Explanation failed: ' + error.message });
     }
 });
 
@@ -569,61 +603,143 @@ RULES:
         res.json({ success: true, memo: result.json, provider: result.provider });
     } catch (error) {
         console.error('Memo generation error:', error);
-        res.status(500).json({ success: false, error: 'Memo generation failed' });
+        res.status(500).json({ success: false, error: 'Memo generation failed: ' + error.message });
     }
 });
 
 /**
- * @route   POST /api/v1/ai/guardian-message
- * @desc    Generate an empathetic, explainable security message from risk signals
- * @access  Public
+ * @route   POST /api/v1/ai/rakshak-intervention
+ * @desc    Generate a contextual intervention message for high-risk transactions
+ * @patent  PAT-007: Multi-Provider AI Orchestrator
+ * @access  Private
  */
-router.post('/guardian-message', async (req, res) => {
+function parseRakshakResponse(content) {
     try {
-        const { risk_level, action, factors, amount, payee } = req.body;
+        const cleaned = content.trim();
+        const jsonMatch = cleaned.match(/\{[\s\S]*\}/);
+        if (jsonMatch) {
+            const parsed = JSON.parse(jsonMatch[0]);
+            if (parsed.message && Array.isArray(parsed.quickReplies)) {
+                return { message: parsed.message, quickReplies: parsed.quickReplies };
+            }
+        }
+    } catch {
+        // fallthrough to heuristic extraction
+    }
+    const lines = content.split(/\n+/).map(l => l.trim()).filter(Boolean);
+    const message = lines.find(l => l.length > 20 && !l.startsWith('-') && !l.startsWith('*')) || lines[0] || '';
+    const quickReplies = lines
+        .filter(l => l.startsWith('-') || l.startsWith('*') || /^\d+\./.test(l))
+        .map(l => l.replace(/^[-*\d.\s]+/, '').trim())
+        .filter(Boolean)
+        .slice(0, 3);
+    return { message, quickReplies };
+}
 
-        if (!risk_level || !action || !Array.isArray(factors)) {
-            return res.status(400).json({
-                success: false,
-                error: 'risk_level, action, and factors[] are required',
-                code: 'MISSING_FIELDS'
-            });
+router.post('/rakshak-intervention', async (req, res) => {
+    try {
+        const { riskScore, signals, amount, beneficiaryName } = req.body;
+
+        if (typeof riskScore !== 'number' || riskScore < 0 || riskScore > 100) {
+            return res.status(400).json({ success: false, error: 'riskScore must be a number between 0 and 100' });
         }
 
-        const amountStr = `₹${Number(amount || 0).toLocaleString('en-IN')}`;
-        const payeeStr = payee || 'this contact';
+        const safeSignals = Array.isArray(signals) ? signals : [];
+        const safeAmount = typeof amount === 'number' ? amount : 0;
+        const safeBeneficiary = typeof beneficiaryName === 'string' && beneficiaryName.trim() ? beneficiaryName.trim() : 'this beneficiary';
+        const signalText = safeSignals.length > 0 ? safeSignals.join(', ') : 'unusual activity';
 
-        const systemPrompt = `You are "SecureWealth Guardian", a calm, empathetic AI security assistant for an Indian banking app. Your job is to translate a list of fraud-risk signals into one short, reassuring, plain-English message for the user. Do not use technical jargon. Do not blame the user. Offer a clear next step. Keep it under 3 sentences.`;
-        const userPrompt = `Risk level: ${risk_level}\nAction: ${action}\nAmount: ${amountStr}\nPayee: ${payeeStr}\nRisk signals:\n${factors.map(f => `- ${f}`).join('\n')}\n\nWrite a single empathetic security message.`;
+        const systemPrompt = `You are Rakshak, a compassionate but firm AI security guardian for Punjab & Sind Bank. Your goal is to detect if the user is being coerced or scammed.
 
-        let message;
-        let source = 'llm';
+RULES:
+- Generate a short, 2-sentence intervention message.
+- Mention the specific red flags provided.
+- Ask a direct question to check for coercion (e.g., "Is someone on a call telling you to do this?").
+- Provide exactly 3 quick-reply options for the user.
+- Return ONLY valid JSON in this exact format:
+{
+  "message": "string",
+  "quickReplies": ["option 1", "option 2", "option 3"]
+}`;
+
+        const userPrompt = `Risk Score: ${riskScore}/100. Red flags: ${signalText}. Amount: ₹${safeAmount.toLocaleString('en-IN')}. Beneficiary: ${safeBeneficiary}. Generate the intervention JSON.`;
+        const fullPrompt = `${systemPrompt}\n\n${userPrompt}`;
+
+        let message = `We noticed ${signalText.toLowerCase()} for a transfer of ₹${safeAmount.toLocaleString('en-IN')} to ${safeBeneficiary}. Please take a moment — is someone on a call or chat instructing you to make this payment?`;
+        let quickReplies = [
+            '🚨 SOS - I am being scammed',
+            '✅ I AM SAFE - Proceed',
+            '📞 Call PSB Support'
+        ];
 
         try {
-            const result = await callLegacyAI(`${systemPrompt}\n\n${userPrompt}`, { maxTokens: 250, temperature: 0.3 });
-            message = result.content?.trim() || fallbackGuardianMessage(action, amountStr, payeeStr);
-            if (!message) source = 'template';
-        } catch (aiErr) {
-            console.warn('Guardian LLM failed, using template:', aiErr.message);
-            message = fallbackGuardianMessage(action, amountStr, payeeStr);
-            source = 'template';
+            const result = await callLegacyAI(fullPrompt, { maxTokens: 500, temperature: 0.4, provider: 'groq' });
+            const parsed = parseRakshakResponse(result.content);
+            if (parsed.message) message = parsed.message;
+            if (parsed.quickReplies.length === 3) quickReplies = parsed.quickReplies;
+        } catch (aiError) {
+            console.warn('Rakshak AI call failed, using fallback intervention:', aiError.message);
         }
 
-        res.json({ success: true, data: { message, source } });
+        const tone = riskScore >= 90 ? 'critical' : 'urgent';
+
+        res.json({
+            success: true,
+            patent: 'PAT-007',
+            data: { message, quickReplies, tone }
+        });
     } catch (error) {
-        console.error('Guardian message error:', error);
-        res.status(500).json({ success: false, error: 'Guardian message generation failed' });
+        console.error('Rakshak intervention error:', error);
+        res.status(500).json({
+            success: false,
+            error: 'Intervention service temporarily unavailable',
+            code: 'RAKSHAK_ERROR',
+            message: error.message
+        });
     }
 });
 
-function fallbackGuardianMessage(action, amountStr, payeeStr) {
-    if (action === 'ALLOW') {
-        return `Your ${amountStr} request to ${payeeStr} looks safe. It matches your usual patterns and trusted device.`;
+/**
+ * @route   POST /api/v1/ai/execute-agent-action
+ * @desc    Approve or dismiss an autonomous Wealth Twin action
+ * @access  Private
+ */
+router.post('/execute-agent-action', (req, res) => {
+    try {
+        const { actionId, approved } = req.body;
+        if (!actionId || typeof approved !== 'boolean') {
+            return res.status(400).json({ success: false, error: 'actionId and approved boolean are required' });
+        }
+
+        if (!approved) {
+            return res.json({ success: true, message: 'Action dismissed by user', executed: false });
+        }
+
+        // Simulate execution: update mock balances for demo user if applicable
+        const user = req.user;
+        const isDemo = DEMO_MODE && user?.id === 'demo-001';
+        if (isDemo && DEMO_USER.accounts && DEMO_USER.accounts.length >= 2) {
+            const savings = DEMO_USER.accounts.find(a => a.type === 'savings') || DEMO_USER.accounts[0];
+            const fd = DEMO_USER.accounts.find(a => a.type === 'fd') || DEMO_USER.accounts[1];
+            if (actionId === 'agent-001') {
+                savings.balance -= 40000;
+                fd.balance += 40000;
+            } else if (actionId === 'agent-002') {
+                savings.balance -= 5000;
+            }
+        }
+
+        res.json({
+            success: true,
+            executed: true,
+            message: 'Action executed by Agentic AI',
+            actionId,
+            timestamp: new Date().toISOString(),
+        });
+    } catch (error) {
+        console.error('Execute agent action error:', error);
+        res.status(500).json({ success: false, error: 'Failed to execute agent action' });
     }
-    if (action === 'WARN' || action === 'WARN_COOL_OFF') {
-        return `🛡️ Security Pause: I noticed you're moving ${amountStr} to ${payeeStr} in a way that doesn't match your normal habits. To protect your wealth, I've placed this on a short cooling-off period. Please verify the OTP I just sent to your registered mobile.`;
-    }
-    return `🛑 I can't let this ${amountStr} transfer to ${payeeStr} proceed right now. Multiple risk signals are active. Please review your recent notifications or contact support — your money stays safe.`;
-}
+});
 
 module.exports = router;

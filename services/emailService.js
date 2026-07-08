@@ -43,11 +43,10 @@ class EmailService {
     }
 
     async sendWelcomeEmail(user) {
-        const safeName = this.escapeHtml(user.name);
         const html = `
             <div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto">
                 <h2 style="color:#1A237E">Welcome to DS Financial!</h2>
-                <p>Hi ${safeName},</p>
+                <p>Hi ${user.name},</p>
                 <p>Your account has been created successfully. Start exploring our patent-protected financial tools:</p>
                 <ul>
                     <li>GSTIN Risk Intelligence Validator</li>
@@ -65,20 +64,18 @@ class EmailService {
             user.email,
             'Welcome to DS Financial - Patent-Protected Financial Tools',
             html,
-            `Welcome ${safeName}! Your DS Financial account is ready.`
+            `Welcome ${user.name}! Your DS Financial account is ready.`
         );
     }
 
     async sendTaxReminder(user, dueDate) {
-        const safeName = this.escapeHtml(user.name);
-        const safeDueDate = this.escapeHtml(dueDate);
         const html = `
             <div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto">
                 <h2 style="color:#EF4444">Tax Filing Reminder</h2>
-                <p>Hi ${safeName},</p>
+                <p>Hi ${user.name},</p>
                 <p>Your tax filing deadline is approaching:</p>
                 <div style="background:#f5f5f5;padding:16px;border-radius:8px;margin:16px 0">
-                    <strong>Due Date:</strong> ${safeDueDate}
+                    <strong>Due Date:</strong> ${dueDate}
                 </div>
                 <a href="https://dsfinancial-india.surge.sh/tax-portal.html"
                    style="background:#1A237E;color:#fff;padding:12px 24px;text-decoration:none;border-radius:8px;display:inline-block">
@@ -91,7 +88,7 @@ class EmailService {
             user.email,
             'Tax Filing Reminder - Due Soon!',
             html,
-            `Your tax filing is due on ${safeDueDate}. Don't miss the deadline!`
+            `Your tax filing is due on ${dueDate}. Don't miss the deadline!`
         );
     }
 

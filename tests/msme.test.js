@@ -2,7 +2,7 @@
  * MSME CreditBridge AI API Tests
  */
 
-process.env.JWT_SECRET = 'this-is-a-very-long-test-secret-for-hackathon-2026';
+process.env.JWT_SECRET = 'testsecret';
 process.env.ALLOW_DEV_AUTH_BYPASS = 'false';
 
 const request = require('supertest');

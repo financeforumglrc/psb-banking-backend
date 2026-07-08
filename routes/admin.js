@@ -6,47 +6,21 @@
 const express = require('express');
 const fs = require('fs');
 const path = require('path');
-const crypto = require('crypto');
-const jwt = require('jsonwebtoken');
-const rateLimit = require('express-rate-limit');
-const { quotaDb, db } = require('../services/database');
-const { authMiddleware, requireRole } = require('../middleware/auth');
+const { quotaDb, db, bankingDb } = require('../services/database');
+const { adminApiAuth, getAdminIdFromToken } = require('../middleware/auth');
+const axios = require('axios');
 const router = express.Router();
 
-const ADMIN_ID = process.env.ADMIN_ID;
-const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD;
-
-if (!ADMIN_ID || !ADMIN_PASSWORD) {
-    throw new Error('FATAL: ADMIN_ID and ADMIN_PASSWORD environment variables are required');
-}
-
-if (ADMIN_PASSWORD.length < 4) {
-    throw new Error('FATAL: ADMIN_PASSWORD must be at least 4 characters');
-}
-
-// Constant-time string comparison to prevent timing attacks on credentials.
-function constantTimeCompare(a, b) {
-    if (typeof a !== 'string' || typeof b !== 'string') return false;
-    const bufA = Buffer.from(a);
-    const bufB = Buffer.from(b);
-    if (bufA.length !== bufB.length) return false;
-    return crypto.timingSafeEqual(bufA, bufB);
-}
-
-// Stricter rate limiting for admin endpoints to mitigate brute-force attacks.
-const adminLimiter = rateLimit({
-    windowMs: 15 * 60 * 1000,
-    max: 10,
-    message: {
-        success: false,
-        error: 'Too many admin attempts, please try again later.',
-        code: 'RATE_LIMIT_EXCEEDED'
-    },
-    standardHeaders: true,
-    legacyHeaders: false
-});
+// Admin credentials are sourced from environment variables only.
+// Default credentials are intentionally NOT provided here; they are handled in middleware/auth.js
+// for non-production environments, but production requires explicit configuration.
+const ADMIN_ID = process.env.ADMIN_ID || 'admin';
+const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'admin123';
 
 function basicAuth(req, res, next) {
+    if (!ADMIN_ID || !ADMIN_PASSWORD) {
+        return res.status(503).json({ success: false, error: 'Admin credentials not configured' });
+    }
     const auth = req.headers.authorization;
     if (!auth || !auth.startsWith('Basic ')) {
         res.setHeader('WWW-Authenticate', 'Basic realm="Admin"');
@@ -54,23 +28,14 @@ function basicAuth(req, res, next) {
     }
     const credentials = Buffer.from(auth.split(' ')[1], 'base64').toString('utf8');
     const [user, pass] = credentials.split(':');
-    if (!constantTimeCompare(user, ADMIN_ID) || !constantTimeCompare(pass, ADMIN_PASSWORD)) {
+    if (user !== ADMIN_ID || pass !== ADMIN_PASSWORD) {
         res.setHeader('WWW-Authenticate', 'Basic realm="Admin"');
         return res.status(401).send('Invalid credentials');
     }
     next();
 }
 
-// Note: API routes are protected by authMiddleware + requireRole('admin') in server.js.
-// This function remains for any route that needs an explicit admin check.
-function adminApiAuth(req, res, next) {
-    if (!req.user || req.user.role !== 'admin') {
-        return res.status(403).json({ success: false, error: 'Admin access required' });
-    }
-    next();
-}
-
-router.get('/quota', adminLimiter, basicAuth, (req, res) => {
+router.get('/quota', basicAuth, (req, res) => {
     try {
         const quota = quotaDb.getOrCreateToday();
         res.json({
@@ -94,7 +59,7 @@ router.get('/quota', adminLimiter, basicAuth, (req, res) => {
     }
 });
 
-router.get('/status', adminLimiter, basicAuth, (req, res) => {
+router.get('/status', basicAuth, (req, res) => {
     try {
         const quota = quotaDb.getOrCreateToday();
         const extractions = db.prepare('SELECT * FROM extractions ORDER BY created_at DESC LIMIT 50').all();
@@ -255,48 +220,86 @@ router.get('/status', adminLimiter, basicAuth, (req, res) => {
 });
 
 // Admin API endpoints for frontend dashboard
-router.post('/login', adminLimiter, (req, res) => {
-    const { adminId, password } = req.body;
-    if (!adminId || !password || typeof adminId !== 'string' || typeof password !== 'string') {
-        return res.status(400).json({ success: false, error: 'Admin ID and password required' });
+function audit(req, action, entityType, entityId, details) {
+    try {
+        bankingDb.createAuditLog({
+            userId: getAdminIdFromToken(req) || 'admin',
+            action,
+            entityType,
+            entityId,
+            newValue: details ? JSON.stringify(details) : null,
+            ipAddress: req.ip,
+            userAgent: req.headers['user-agent']
+        });
+    } catch (e) {
+        console.error('[Admin] audit log failed', e.message);
     }
-    if (!constantTimeCompare(adminId, ADMIN_ID) || !constantTimeCompare(password, ADMIN_PASSWORD)) {
+}
+
+router.post('/login', (req, res) => {
+    const id = ADMIN_ID;
+    const password = ADMIN_PASSWORD;
+    if (!id || !password) {
+        return res.status(503).json({ success: false, error: 'Admin credentials not configured' });
+    }
+    const { adminId, password: providedPassword } = req.body;
+    if (adminId !== id || providedPassword !== password) {
         return res.status(401).json({ success: false, error: 'Invalid admin credentials' });
     }
-    const token = jwt.sign(
-        { id: ADMIN_ID, role: 'admin', tier: 'enterprise' },
-        process.env.JWT_SECRET,
-        { algorithm: 'HS256', expiresIn: '24h' }
-    );
-
-    const isProduction = process.env.NODE_ENV === 'production';
-    res.cookie('accessToken', token, {
-        httpOnly: true,
-        secure: isProduction,
-        sameSite: isProduction ? 'none' : 'lax',
-        maxAge: 24 * 60 * 60 * 1000
-    });
-
+    audit(req, 'LOGIN', 'admin', null, { adminId });
+    const token = Buffer.from(`${adminId}:${providedPassword}`).toString('base64');
     res.json({ success: true, token });
 });
 
-router.get('/users', authMiddleware, requireRole('admin'), (req, res) => {
+router.get('/users', adminApiAuth, (req, res) => {
     try {
-        const users = db.prepare(`
-            SELECT id, email, name, phone, role, tier, pan_number, aadhar, 
-                   created_at, last_login, face_descriptor IS NOT NULL as face_registered,
-                   api_usage_total, is_active
-            FROM users
-            ORDER BY created_at DESC
-        `).all();
-        res.json({ success: true, users });
+        const { q, sort, order, page, limit } = req.query;
+        const result = bankingDb.getUsers({
+            q: q || '',
+            sort: sort || 'created_at',
+            order: order || 'desc',
+            page: parseInt(page) || 1,
+            limit: parseInt(limit) || 50,
+        });
+        res.json({ success: true, ...result });
     } catch (error) {
         console.error('Admin users error:', error);
         res.status(500).json({ success: false, error: 'Failed to load users' });
     }
 });
 
-router.get('/stats', authMiddleware, requireRole('admin'), (req, res) => {
+router.patch('/users/:id/status', adminApiAuth, (req, res) => {
+    try {
+        const { isActive } = req.body;
+        if (typeof isActive !== 'boolean') {
+            return res.status(400).json({ success: false, error: 'isActive boolean required' });
+        }
+        const userId = req.params.id;
+        const before = db.prepare('SELECT is_active FROM users WHERE id = ?').get(userId);
+        bankingDb.updateUserStatus(userId, isActive);
+        audit(req, 'UPDATE', 'user', userId, { field: 'is_active', oldValue: before?.is_active ?? null, newValue: isActive ? 1 : 0 });
+        res.json({ success: true });
+    } catch (error) {
+        console.error('Update user status error:', error);
+        res.status(500).json({ success: false, error: 'Failed to update user status' });
+    }
+});
+
+router.patch('/users/:id', adminApiAuth, (req, res) => {
+    try {
+        const userId = req.params.id;
+        const { role, tier } = req.body;
+        const before = db.prepare('SELECT role, tier FROM users WHERE id = ?').get(userId);
+        bankingDb.updateUser(userId, { role, tier });
+        audit(req, 'UPDATE', 'user', userId, { fields: ['role', 'tier'], oldValue: before || null, newValue: { role, tier } });
+        res.json({ success: true });
+    } catch (error) {
+        console.error('Update user error:', error);
+        res.status(500).json({ success: false, error: 'Failed to update user' });
+    }
+});
+
+router.get('/stats', adminApiAuth, (req, res) => {
     try {
         const totalUsers = db.prepare('SELECT COUNT(*) as count FROM users').get();
         const faceRegistered = db.prepare('SELECT COUNT(*) as count FROM users WHERE face_descriptor IS NOT NULL').get();
@@ -323,6 +326,141 @@ router.get('/stats', authMiddleware, requireRole('admin'), (req, res) => {
     } catch (error) {
         console.error('Admin stats error:', error);
         res.status(500).json({ success: false, error: 'Failed to load stats' });
+    }
+});
+
+// IP geolocation cache
+const ipGeoCache = {};
+
+// GET /audit-logs — Returns all audit logs with filters + IP location enrichment
+router.get('/audit-logs', adminApiAuth, async (req, res) => {
+    try {
+        const { userId, action, entityType, dateFrom, dateTo, q, page, limit } = req.query;
+        const result = bankingDb.getAuditLogsPaged({
+            userId, action, entityType, dateFrom, dateTo,
+            q: q || '',
+            page: parseInt(page) || 1,
+            limit: parseInt(limit) || 100,
+        });
+        const enriched = await Promise.all(result.logs.map(async (log) => {
+            const ip = log.ip_address;
+            if (ip && !ipGeoCache[ip] && ip !== '127.0.0.1' && ip !== '::1' && ip !== 'unknown') {
+                try {
+                    const { data } = await axios.get(`http://ip-api.com/json/${ip}?fields=status,country,city,isp,query`, { timeout: 3000 });
+                    if (data.status === 'success') {
+                        ipGeoCache[ip] = { country: data.country, city: data.city, isp: data.isp };
+                    }
+                } catch {}
+            }
+            let parsedNewValue = null;
+            try { parsedNewValue = log.new_value ? JSON.parse(log.new_value) : null; } catch {}
+            return { ...log, location: ipGeoCache[ip] || null, parsedNewValue };
+        }));
+        res.json({ success: true, logs: enriched, total: result.total, page: result.page, pages: result.pages, limit: result.limit });
+    } catch (error) {
+        console.error('Admin audit logs error:', error);
+        res.status(500).json({ success: false, error: 'Failed to load audit logs' });
+    }
+});
+
+// GET /dashboard-metrics — Returns time-series and distribution data for the admin dashboard
+router.get('/dashboard-metrics', adminApiAuth, (req, res) => {
+    try {
+        const metrics = bankingDb.getDashboardMetrics(parseInt(req.query.days) || 7);
+        res.json({ success: true, metrics });
+    } catch (error) {
+        console.error('Dashboard metrics error:', error);
+        res.status(500).json({ success: false, error: 'Failed to load dashboard metrics' });
+    }
+});
+
+// GET /fraud-events — Returns risk events with IP location for heatmap
+router.get('/fraud-events', adminApiAuth, async (req, res) => {
+    try {
+        const logs = bankingDb.getFraudEvents(parseInt(req.query.limit) || 100);
+        const enriched = await Promise.all(logs.map(async (log) => {
+            const ip = log.ip_address;
+            let location = null;
+            if (ip && ip !== '127.0.0.1' && ip !== '::1' && ip !== 'unknown') {
+                if (ipGeoCache[ip]) {
+                    location = ipGeoCache[ip];
+                } else {
+                    try {
+                        const { data } = await axios.get(`http://ip-api.com/json/${ip}?fields=status,country,city,lat,lon,isp,query`, { timeout: 3000 });
+                        if (data.status === 'success') {
+                            location = { country: data.country, city: data.city, lat: data.lat, lon: data.lon, isp: data.isp };
+                            ipGeoCache[ip] = location;
+                        }
+                    } catch {}
+                }
+            }
+            let parsedNewValue = null;
+            try { parsedNewValue = log.new_value ? JSON.parse(log.new_value) : null; } catch {}
+            return { ...log, location, parsedNewValue, riskScore: parsedNewValue?.status >= 500 ? 95 : parsedNewValue?.status >= 400 ? 70 : 40 };
+        }));
+        res.json({ success: true, events: enriched.filter(e => e.location) });
+    } catch (error) {
+        console.error('Admin fraud events error:', error);
+        res.status(500).json({ success: false, error: 'Failed to load fraud events' });
+    }
+});
+
+router.post('/fraud-events/:id/acknowledge', adminApiAuth, (req, res) => {
+    try {
+        const id = parseInt(req.params.id);
+        if (!id) return res.status(400).json({ success: false, error: 'Invalid event id' });
+        bankingDb.acknowledgeFraudEvent(id, getAdminIdFromToken(req));
+        audit(req, 'ACKNOWLEDGE', 'fraud_event', id, {});
+        res.json({ success: true });
+    } catch (error) {
+        console.error('Acknowledge fraud event error:', error);
+        res.status(500).json({ success: false, error: 'Failed to acknowledge event' });
+    }
+});
+
+router.post('/fraud-events/:id/block-user', adminApiAuth, async (req, res) => {
+    try {
+        const id = parseInt(req.params.id);
+        if (!id) return res.status(400).json({ success: false, error: 'Invalid event id' });
+        const log = db.prepare('SELECT user_id, ip_address FROM audit_logs WHERE id = ?').get(id);
+        if (!log) return res.status(404).json({ success: false, error: 'Event not found' });
+        if (log.user_id) {
+            const before = db.prepare('SELECT is_active FROM users WHERE id = ?').get(log.user_id);
+            bankingDb.blockUser(log.user_id);
+            audit(req, 'BLOCK', 'user', log.user_id, { auditLogId: id, previousIsActive: before?.is_active ?? null });
+        }
+        res.json({ success: true, blockedUserId: log.user_id || null });
+    } catch (error) {
+        console.error('Block user error:', error);
+        res.status(500).json({ success: false, error: 'Failed to block user' });
+    }
+});
+
+router.post('/fraud-events/:id/whitelist-ip', adminApiAuth, (req, res) => {
+    try {
+        const id = parseInt(req.params.id);
+        if (!id) return res.status(400).json({ success: false, error: 'Invalid event id' });
+        const log = db.prepare('SELECT ip_address FROM audit_logs WHERE id = ?').get(id);
+        if (!log?.ip_address) return res.status(404).json({ success: false, error: 'No IP address for event' });
+        bankingDb.whitelistIp(log.ip_address);
+        audit(req, 'WHITELIST_IP', 'ip', null, { auditLogId: id, ip: log.ip_address });
+        res.json({ success: true, ip: log.ip_address });
+    } catch (error) {
+        console.error('Whitelist IP error:', error);
+        res.status(500).json({ success: false, error: 'Failed to whitelist IP' });
+    }
+});
+
+router.post('/fraud-events/:id/false-positive', adminApiAuth, (req, res) => {
+    try {
+        const id = parseInt(req.params.id);
+        if (!id) return res.status(400).json({ success: false, error: 'Invalid event id' });
+        bankingDb.markFalsePositive(id, getAdminIdFromToken(req));
+        audit(req, 'FALSE_POSITIVE', 'fraud_event', id, {});
+        res.json({ success: true });
+    } catch (error) {
+        console.error('False positive error:', error);
+        res.status(500).json({ success: false, error: 'Failed to mark false positive' });
     }
 });
 
