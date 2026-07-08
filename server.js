@@ -5,12 +5,15 @@
  */
 
 const path = require('path');
+const fs = require('fs');
+const http = require('http');
 const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
 const morgan = require('morgan');
 const rateLimit = require('express-rate-limit');
-const cookieParser = require('cookie-parser');
+const WebSocket = require('ws');
+const jwt = require('jsonwebtoken');
 const winston = require('winston');
 require('dotenv').config();
 
@@ -26,24 +29,23 @@ const extractRoutes = require('./routes/extract');
 const galleryRoutes = require('./routes/gallery');
 const exportRoutes = require('./routes/export');
 const adminRoutes = require('./routes/admin');
+const fraudRoutes = require('./routes/fraud');
 const chartRoutes = require('./routes/charts');
 const marketDataRoutes = require('./routes/market-data');
 const scenarioRoutes = require('./routes/scenarios');
 const nlpQueryRoutes = require('./routes/nlp-query');
 const screenerRoutes  = require('./routes/screener');
 const bankingRoutes = require('./routes/banking');
+const businessRoutes = require('./routes/business');
 const kycRoutes = require('./routes/kyc');
-const aaRoutes = require('./routes/aa');
-const protectionRoutes = require('./routes/protection');
-const otpRoutes = require('./routes/otp');
 const msmeRoutes = require('./routes/msme');
+const { seedAll } = require('./scripts/seedDemoData');
+const { seedComprehensiveDemo } = require('./scripts/seedComprehensiveDemo');
 
 // Import middleware
 const { errorHandler } = require('./middleware/errorHandler');
-const { authMiddleware, requireRole, ensureJwtSecret } = require('./middleware/auth');
-
-// Validate JWT secret before accepting traffic
-ensureJwtSecret();
+const { authMiddleware, requireRole, validateSecurityConfig } = require('./middleware/auth');
+const { auditMiddleware } = require('./middleware/auditLogger');
 
 // Initialize logger
 const logger = winston.createLogger({
@@ -62,17 +64,22 @@ const logger = winston.createLogger({
 
 // Initialize Express app
 const app = express();
-app.set('trust proxy', process.env.TRUST_PROXY ? parseInt(process.env.TRUST_PROXY, 10) : 1);
+const httpServer = http.createServer(app);
 const PORT = process.env.PORT || 5000;
 
+// Validate security-critical configuration before accepting traffic
+validateSecurityConfig();
+
+// Default no-op until server starts; banking.js fraud alerts call this safely
+global.broadcastFraudAlert = () => {};
+
 // Security middleware
-app.use(cookieParser());
 app.use(helmet({
     contentSecurityPolicy: {
         directives: {
             defaultSrc: ["'self'"],
             styleSrc: ["'self'", "'unsafe-inline'", "https://cdnjs.cloudflare.com", "https://fonts.googleapis.com"],
-            scriptSrc: ["'self'", "https://checkout.razorpay.com"],
+            scriptSrc: ["'self'", "'unsafe-inline'"],
             fontSrc: ["'self'", "https://fonts.gstatic.com", "https://cdnjs.cloudflare.com"],
             imgSrc: ["'self'", "data:", "https:"],
             connectSrc: ["'self'", "https://api.gst.gov.in", "https://openrouter.ai", "https://api.groq.com", "https://api-inference.huggingface.co", "https://api.anthropic.com", "https://generativelanguage.googleapis.com", "https://api.openai.com"]
@@ -85,29 +92,15 @@ app.use(helmet({
     }
 }));
 
-const envOrigins = (process.env.CORS_ORIGINS || '')
-    .split(',')
-    .map(o => o.trim())
-    .filter(Boolean);
-
-const defaultOrigins = process.env.NODE_ENV === 'production'
-    ? ['https://dsfinancial.in', 'https://www.dsfinancial.in', 'https://dsfinancial-47556.surge.sh', 'https://psb-securewealth-2026-new.surge.sh', 'https://psb-securewealth-frontend.onrender.com', 'https://psb-securewealth-backend.onrender.com']
-    : ['http://localhost:3000', 'http://localhost:5173', 'http://127.0.0.1:5174', 'http://127.0.0.1:5175', 'http://127.0.0.1:5500', 'https://dsfinancial-47556.surge.sh', 'https://psb-securewealth-2026-new.surge.sh', 'https://psb-securewealth-frontend.onrender.com'];
-
-const allowedOrigins = Array.from(new Set([...defaultOrigins, ...envOrigins]));
-
 app.use(cors({
-    origin: (origin, callback) => {
-        if (!origin) return callback(null, true);
-        if (process.env.NODE_ENV !== 'production' && /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin)) {
-            return callback(null, true);
-        }
-        if (allowedOrigins.includes(origin)) return callback(null, true);
-        callback(new Error(`Origin ${origin} not allowed by CORS`));
-    },
+    origin: process.env.NODE_ENV === 'production' 
+        ? ['https://dsfinancial.in', 'https://www.dsfinancial.in', 'https://dsfinancial-47556.surge.sh', 'https://psb-securewealth-2026-new.surge.sh'] 
+        : ['http://localhost:3000', 'http://localhost:5173', 'http://127.0.0.1:5500', 'https://dsfinancial-47556.surge.sh', 'https://psb-securewealth-2026-new.surge.sh'],
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'X-API-Key', 'X-BYOK-Key', 'X-Device-Id']
+    allowedHeaders: process.env.NODE_ENV === 'production'
+        ? ['Content-Type', 'Authorization', 'X-API-Key', 'X-BYOK-Key', 'X-Device-Id']
+        : ['Content-Type', 'Authorization', 'X-API-Key', 'X-BYOK-Key', 'X-Device-Id', 'X-Dev-User-Email']
 }));
 
 // Rate limiting
@@ -121,7 +114,6 @@ const limiter = rateLimit({
     standardHeaders: true,
     legacyHeaders: false
 });
-app.use(limiter);
 
 // Stricter rate limiting for AI endpoints
 const aiLimiter = rateLimit({
@@ -133,15 +125,30 @@ const aiLimiter = rateLimit({
     }
 });
 
-// Raw body parser for Razorpay webhook signature verification (must be before express.json)
-app.use('/api/v1/banking/payments/webhook', express.raw({ type: 'application/json' }));
+// Per-route limiters for compute-heavy or external-data endpoints
+const chartLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 60, message: { success: false, error: 'Chart request limit exceeded' } });
+const scenarioLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 60, message: { success: false, error: 'Scenario request limit exceeded' } });
+const nlpLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 30, message: { success: false, error: 'NLP query limit exceeded' } });
+const marketLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 100, message: { success: false, error: 'Market data request limit exceeded' } });
+
+app.use(limiter);
+app.use('/api/v1/charts', chartLimiter);
+app.use('/api/v1/scenarios', scenarioLimiter);
+app.use('/api/v1/query', nlpLimiter);
+app.use('/api/v1/market', marketLimiter);
 
 // Body parsing
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
+// Audit logging: captures all authenticated mutations/views
+app.use(auditMiddleware);
+
 // Request logging
 app.use(morgan('combined', { stream: { write: message => logger.info(message.trim()) } }));
+
+// Lightweight keep-alive ping endpoint for Render free tier
+app.get('/ping', (_, res) => res.json({ ok: true, ts: Date.now(), uptime: process.uptime() }));
 
 // Frontend routes - serve HTML directly
 app.get('/', (req, res) => {
@@ -163,14 +170,21 @@ app.get('/financial-modelling-v2', (req, res) => {
 });
 
 // Serve any .js tab module requested directly (tab_screener.js etc.)
+// SECURITY: Whitelist known tab names to prevent path traversal attacks
+const ALLOWED_TAB_NAMES = new Set([
+    'screener', 'dcf', 'footballfield', 'lbo', 'ma', 'modelgrid',
+    'ratios', 'sensitivity', 'summary', 'wacc', 'comps'
+]);
 app.get('/tab_:name.js', (req, res) => {
-    const allowed = new Set(['screener', 'charts', 'portfolio', 'tax', 'gst']);
-    if (!allowed.has(req.params.name)) {
-        return res.status(400).send('Invalid tab module');
+    const name = req.params.name;
+    if (!ALLOWED_TAB_NAMES.has(name)) {
+        return res.status(404).json({ success: false, error: 'Tab not found' });
     }
-    const filePath = path.resolve(__dirname, '..', `tab_${req.params.name}.js`);
-    if (!filePath.startsWith(path.resolve(__dirname, '..'))) {
-        return res.status(400).send('Invalid path');
+    const filePath = path.resolve(path.join(__dirname, '..', `tab_${name}.js`));
+    // Verify resolved path stays within parent directory
+    const parentDir = path.resolve(path.join(__dirname, '..'));
+    if (!filePath.startsWith(parentDir + path.sep) && filePath !== parentDir) {
+        return res.status(403).json({ success: false, error: 'Access denied' });
     }
     res.sendFile(filePath);
 });
@@ -185,7 +199,7 @@ app.get('/api/v1/health', (req, res) => {
         message: 'DS Financial API is running',
         version: '2.0.0',
         timestamp: new Date().toISOString(),
-        environment: process.env.NODE_ENV === 'production' ? 'production' : 'non-production',
+        environment: process.env.NODE_ENV,
         patents: {
             total: 47,
             phase1: 7,
@@ -213,13 +227,13 @@ const authLimiter = rateLimit({
 app.use('/api/v1/auth', authRoutes);
 app.use('/api/v1/tax', authMiddleware, taxRoutes);
 app.use('/api/v1/gst', authMiddleware, gstRoutes);
-// AI/extract/export require authenticated users (quota/cost/security)
-app.use('/api/v1/ai', authMiddleware, aiLimiter, aiRoutes);
-app.use('/api/v1/extract', authMiddleware, aiLimiter, extractRoutes);
-app.use('/api/v1/export', authMiddleware, exportRoutes);
+// Phase 2 v2: AI routes require authentication (BYOK still supported via header)
+app.use('/api/v1/ai', aiLimiter, authMiddleware, aiRoutes);
+app.use('/api/v1/extract', aiLimiter, authMiddleware, extractRoutes);
 app.use('/api/v1/gallery', galleryRoutes);
-// Admin routes handle their own auth (login is public; users/stats require admin JWT cookie)
+app.use('/api/v1/export', authMiddleware, exportRoutes);
 app.use('/api/v1/admin', adminRoutes);
+app.use('/api/v1/fraud', fraudRoutes);
 app.use('/api/v1/documents', authMiddleware, documentRoutes);
 app.use('/api/v1/analytics', authMiddleware, requireRole('admin'), analyticsRoutes);
 app.use('/api/v1/financial-model', authMiddleware, financialModelRoutes);
@@ -229,16 +243,10 @@ app.use('/api/v1/market', marketDataRoutes);
 app.use('/api/v1/scenarios', scenarioRoutes);
 app.use('/api/v1/query', nlpQueryRoutes);
 app.use('/api/v1/screener', screenerRoutes);
-app.use('/api/v1/banking', bankingRoutes);
+app.use('/api/v1/banking', authMiddleware, bankingRoutes);
+app.use('/api/v1/business', businessRoutes);
 app.use('/api/v1/kyc', authMiddleware, kycRoutes);
-// Account Aggregator mock endpoints (guest-friendly for demo; production uses authMiddleware)
-function aaGuestAuth(req, res, next) {
-    if (req.user && req.user.id) return next();
-    const guestId = req.headers['x-device-id'] || req.body?.userId || 'anonymous';
-    req.user = { id: String(guestId).slice(0, 64) };
-    next();
-}
-app.use('/api/v1/aa', aaGuestAuth, aaRoutes);
+app.use('/api/v1/msme', authMiddleware, msmeRoutes);
 
 // Patent information endpoint
 app.get('/api/v1/patents', (req, res) => {
@@ -300,17 +308,23 @@ app.get('/api/v1/patents', (req, res) => {
     });
 });
 
-// SecureWealth Twin protection API (mirrors the FastAPI microservice)
-app.use('/', protectionRoutes);
-
-// OTP API (email-based one-time passwords)
-app.use('/api/v1/otp', otpRoutes);
-app.use('/api/v1/msme', authMiddleware, msmeRoutes);
-
 // Static file serving - ONLY serve from public directory, never parent dirs
 app.use(express.static(path.join(__dirname, '..', 'public'), {
     index: ['index.html', 'api-demo.html']
 }));
+
+// Serve the built React SPA in production / container deployments
+const spaDist = path.join(__dirname, '..', 'client', 'dist');
+app.use(express.static(spaDist, { index: false }));
+app.get('*', (req, res, next) => {
+    if (req.path.startsWith('/api') || req.path.startsWith('/ws')) return next();
+    if (req.headers.accept && !req.headers.accept.includes('text/html')) return next();
+    const indexPath = path.join(spaDist, 'index.html');
+    if (fs.existsSync(indexPath)) {
+        return res.sendFile(indexPath);
+    }
+    next();
+});
 
 // 404 handler
 app.use((req, res) => {
@@ -325,37 +339,69 @@ app.use((req, res) => {
 // Global error handler
 app.use(errorHandler);
 
-const database = require('./services/database');
-
 // Start server only when run directly (not when imported by tests)
 if (require.main === module) {
-    database.ready
+    // WebSocket alert server for real-time fraud notifications
+    const wss = new WebSocket.Server({ server: httpServer, path: '/ws/alerts' });
+
+    global.broadcastFraudAlert = (alert) => {
+        const payload = JSON.stringify({ type: 'FRAUD_ALERT', data: alert, ts: Date.now() });
+        wss.clients.forEach(client => {
+            if (client.readyState === WebSocket.OPEN) client.send(payload);
+        });
+    };
+
+    wss.on('connection', (ws, req) => {
+        try {
+            const url = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
+            const token = url.searchParams.get('token');
+            if (!token) {
+                ws.close(1008, 'Missing token');
+                return;
+            }
+            const secret = process.env.JWT_SECRET;
+            if (!secret) {
+                ws.close(1011, 'Server JWT secret not configured');
+                return;
+            }
+            const decoded = jwt.verify(token, secret);
+            if (decoded.role !== 'admin') {
+                ws.close(1008, 'Admin role required');
+                return;
+            }
+            ws.send(JSON.stringify({ type: 'CONNECTED', ts: Date.now() }));
+        } catch {
+            ws.close(1008, 'Invalid token');
+        }
+    });
+
+    // Cleanup AI cache once a day
+    setInterval(() => {
+        try {
+            require('./services/database').db.prepare(`DELETE FROM ai_cache WHERE created_at < datetime('now', '-24 hours')`).run();
+        } catch (e) {
+            console.error('[ai-cache] cleanup error:', e.message);
+        }
+    }, 24 * 60 * 60 * 1000);
+
+    seedAll()
+        .then(() => seedComprehensiveDemo())
         .then(() => {
-            const server = app.listen(PORT, () => {
+            httpServer.listen(PORT, () => {
                 logger.info(`DS Financial API Server running on port ${PORT}`);
                 logger.info(`Environment: ${process.env.NODE_ENV}`);
                 logger.info(`Patent Portfolio: 47 innovations ready`);
+                require('./scripts/keepAlive').start();
             });
-
-            const gracefulShutdown = async (signal) => {
-                logger.info(`Received ${signal}, flushing Postgres sync queue...`);
-                try {
-                    await database.pgAdapter.flushAndShutdown(database.db);
-                } catch (err) {
-                    logger.error('Error during shutdown flush:', err.message);
-                }
-                server.close(() => {
-                    logger.info('Server closed.');
-                    process.exit(0);
-                });
-            };
-
-            process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
-            process.on('SIGINT', () => gracefulShutdown('SIGINT'));
         })
         .catch((err) => {
-            logger.error('Database adapter failed to initialize:', err.message);
-            process.exit(1);
+            logger.error('Demo seed failed, starting server anyway:', err);
+            httpServer.listen(PORT, () => {
+                logger.info(`DS Financial API Server running on port ${PORT}`);
+                logger.info(`Environment: ${process.env.NODE_ENV}`);
+                logger.info(`Patent Portfolio: 47 innovations ready`);
+                require('./scripts/keepAlive').start();
+            });
         });
 }
 

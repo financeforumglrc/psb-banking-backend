@@ -23,39 +23,29 @@ const authLimiter = rateLimit({
     legacyHeaders: false
 });
 
-const { userDb, sessionDb, deviceFingerprintDb } = require('../services/database');
+// Token refresh can happen legitimately in bursts (e.g., on app load), so allow more requests
+const refreshLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    max: 100,
+    message: {
+        success: false,
+        error: 'Too many refresh attempts, please try again later.',
+        code: 'RATE_LIMIT_EXCEEDED'
+    },
+    standardHeaders: true,
+    legacyHeaders: false
+});
+
+const { userDb, sessionDb } = require('../services/database');
 const { authMiddleware } = require('../middleware/auth');
-
-const isProduction = process.env.NODE_ENV === 'production';
-
-function setAuthCookies(res, accessToken, refreshToken) {
-    const accessOptions = {
-        httpOnly: true,
-        secure: isProduction,
-        sameSite: isProduction ? 'none' : 'lax',
-        maxAge: 7 * 24 * 60 * 60 * 1000
-    };
-    const refreshOptions = {
-        httpOnly: true,
-        secure: isProduction,
-        sameSite: isProduction ? 'none' : 'lax',
-        maxAge: 30 * 24 * 60 * 60 * 1000
-    };
-    res.cookie('accessToken', accessToken, accessOptions);
-    if (refreshToken) res.cookie('refreshToken', refreshToken, refreshOptions);
-}
-
-function clearAuthCookies(res) {
-    res.clearCookie('accessToken');
-    res.clearCookie('refreshToken');
-}
+const { maskEmail, maskPhone, maskPan, maskAadhaar } = require('../lib/pii');
 
 function formatUser(user) {
     return {
         id: user.id,
-        email: user.email,
+        email: maskEmail(user.email),
         name: user.name,
-        phone: user.phone,
+        phone: maskPhone(user.phone),
         role: user.role,
         tier: user.tier,
         createdAt: user.created_at,
@@ -75,9 +65,6 @@ function formatUser(user) {
 router.post('/register', authLimiter, async (req, res) => {
     try {
         const { email, password, name, phone, pan_number, aadhar } = req.body;
-        const fingerprint = req.body.fingerprint || {};
-        const visitorId = fingerprint.visitorId || req.headers['x-device-id'] || null;
-        const fingerprintHash = fingerprint.fingerprintHash || visitorId || null;
 
         if (!email || !password || !name) {
             return res.status(400).json({
@@ -141,16 +128,6 @@ router.post('/register', authLimiter, async (req, res) => {
 
         userDb.create(user);
 
-        // Store first device fingerprint and mark it trusted
-        if (visitorId) {
-            deviceFingerprintDb.create({
-                userId: user.id,
-                visitorId,
-                fingerprintHash: fingerprintHash || visitorId,
-                isTrusted: true
-            });
-        }
-
         const accessToken = jwt.sign(
             { id: user.id, email: user.email, role: user.role, tier: user.tier },
             process.env.JWT_SECRET,
@@ -171,8 +148,6 @@ router.post('/register', authLimiter, async (req, res) => {
             refreshToken: refreshToken,
             expiresAt: expiresAt.toISOString()
         });
-
-        setAuthCookies(res, accessToken, refreshToken);
 
         res.status(201).json({
             success: true,
@@ -212,9 +187,6 @@ router.post('/register', authLimiter, async (req, res) => {
 router.post('/login', authLimiter, async (req, res) => {
     try {
         const { email, password } = req.body;
-        const fingerprint = req.body.fingerprint || {};
-        const visitorId = fingerprint.visitorId || req.headers['x-device-id'] || null;
-        const fingerprintHash = fingerprint.fingerprintHash || visitorId || null;
 
         if (!email || !password) {
             return res.status(400).json({
@@ -244,17 +216,6 @@ router.post('/login', authLimiter, async (req, res) => {
 
         userDb.updateLastLogin(user.id);
 
-        // Record/update device fingerprint. Trust the first fingerprint for this user.
-        if (visitorId) {
-            const isTrusted = !deviceFingerprintDb.hasTrustedDevice(user.id);
-            deviceFingerprintDb.create({
-                userId: user.id,
-                visitorId,
-                fingerprintHash: fingerprintHash || visitorId,
-                isTrusted
-            });
-        }
-
         const accessToken = jwt.sign(
             { id: user.id, email: user.email, role: user.role, tier: user.tier },
             process.env.JWT_SECRET,
@@ -275,8 +236,6 @@ router.post('/login', authLimiter, async (req, res) => {
             refreshToken: refreshToken,
             expiresAt: expiresAt.toISOString()
         });
-
-        setAuthCookies(res, accessToken, refreshToken);
 
         res.json({
             success: true,
@@ -311,9 +270,73 @@ router.post('/login', authLimiter, async (req, res) => {
  * @desc    Refresh access token
  * @access  Public (with refresh token)
  */
-router.post('/refresh', (req, res) => {
+/**
+ * @route   POST /api/v1/auth/demo-login
+ * @desc    Login as a curated demo persona (synthetic data)
+ * @access  Public
+ */
+router.post('/demo-login', authLimiter, async (req, res) => {
     try {
-        const refreshToken = req.cookies?.refreshToken || req.body?.refreshToken;
+        const { email, name } = req.body;
+        if (!email) {
+            return res.status(400).json({ success: false, error: 'Email is required', code: 'FIELDS_MISSING' });
+        }
+
+        let user = userDb.findByEmail(email);
+        if (!user) {
+            // Auto-create the demo persona if it does not exist (defensive fallback)
+            const bcrypt = require('bcryptjs');
+            user = {
+                id: require('crypto').randomUUID(),
+                email,
+                password: bcrypt.hashSync('SecureWealth@123', 12),
+                name: name || email.split('@')[0],
+                role: 'user',
+                tier: 'premium'
+            };
+            userDb.create(user);
+            user = userDb.findByEmail(email);
+        }
+
+        userDb.updateLastLogin(user.id);
+
+        const accessToken = jwt.sign(
+            { id: user.id, email: user.email, role: user.role, tier: user.tier },
+            process.env.JWT_SECRET,
+            { expiresIn: process.env.JWT_EXPIRE || '7d' }
+        );
+
+        const refreshToken = jwt.sign(
+            { id: user.id, type: 'refresh' },
+            process.env.JWT_SECRET,
+            { expiresIn: process.env.JWT_REFRESH_EXPIRE || '30d' }
+        );
+
+        const expiresAt = new Date();
+        expiresAt.setDate(expiresAt.getDate() + 30);
+        sessionDb.create({
+            userId: user.id,
+            refreshToken: refreshToken,
+            expiresAt: expiresAt.toISOString()
+        });
+
+        res.json({
+            success: true,
+            message: 'Demo login successful',
+            data: {
+                user: { id: user.id, email: user.email, name: user.name, role: user.role, tier: user.tier },
+                tokens: { accessToken, refreshToken, expiresIn: '7d' }
+            }
+        });
+    } catch (error) {
+        console.error('Demo login error:', error);
+        res.status(500).json({ success: false, error: 'Demo login failed', code: 'DEMO_LOGIN_ERROR' });
+    }
+});
+
+router.post('/refresh', refreshLimiter, (req, res) => {
+    try {
+        const { refreshToken } = req.body;
 
         if (!refreshToken) {
             return res.status(400).json({
@@ -358,8 +381,6 @@ router.post('/refresh', (req, res) => {
             { expiresIn: process.env.JWT_EXPIRE || '7d' }
         );
 
-        setAuthCookies(res, accessToken);
-
         res.json({
             success: true,
             data: {
@@ -383,16 +404,6 @@ router.post('/refresh', (req, res) => {
             details: error.message
         });
     }
-});
-
-/**
- * @route   POST /api/v1/auth/logout
- * @desc    Clear authentication cookies
- * @access  Public
- */
-router.post('/logout', (req, res) => {
-    clearAuthCookies(res);
-    res.json({ success: true, message: 'Logged out successfully' });
 });
 
 /**
@@ -455,25 +466,6 @@ function euclideanDistance(a, b) {
     }
     return Math.sqrt(sum);
 }
-
-/**
- * @route   POST /api/v1/auth/face-register
- * @desc    Register a face descriptor for the authenticated user
- * @access  Private
- */
-router.post('/face-register', authMiddleware, (req, res) => {
-    try {
-        const { descriptor } = req.body;
-        if (!Array.isArray(descriptor) || descriptor.length !== 128) {
-            return res.status(400).json({ success: false, error: 'A valid 128-element face descriptor is required' });
-        }
-        userDb.updateFaceDescriptor(req.user.id, JSON.stringify(descriptor));
-        res.json({ success: true, message: 'Face descriptor registered' });
-    } catch (error) {
-        console.error('Face register error:', error);
-        res.status(500).json({ success: false, error: 'Face registration failed' });
-    }
-});
 
 /**
  * @route   POST /api/v1/auth/face-verify
@@ -544,8 +536,6 @@ router.post('/face-verify', authLimiter, (req, res) => {
             expiresAt: expiresAt.toISOString()
         });
 
-        setAuthCookies(res, accessToken, refreshToken);
-
         res.json({
             success: true,
             message: 'Face login successful',
@@ -558,130 +548,6 @@ router.post('/face-verify', authLimiter, (req, res) => {
     } catch (error) {
         console.error('Face verify error:', error);
         res.status(500).json({ success: false, error: 'Face verification failed', code: 'FACE_VERIFY_ERROR' });
-    }
-});
-
-/**
- * @route   POST /api/v1/auth/demo-login
- * @desc    Login or create a demo account (for quick-login tiles)
- * @access  Public
- */
-router.post('/demo-login', authLimiter, async (req, res) => {
-    try {
-        const { email, name } = req.body;
-        const fingerprint = req.body.fingerprint || {};
-        const visitorId = fingerprint.visitorId || req.headers['x-device-id'] || null;
-        const fingerprintHash = fingerprint.fingerprintHash || visitorId || null;
-
-        if (!email || !name) {
-            return res.status(400).json({ success: false, error: 'Email and name required' });
-        }
-
-        let user = userDb.findByEmail(email);
-        if (!user) {
-            const id = require('crypto').randomUUID();
-            userDb.create({
-                id,
-                email,
-                password: bcrypt.hashSync(require('crypto').randomBytes(24).toString('hex'), 12),
-                name,
-                role: 'user',
-                tier: 'premium'
-            });
-            user = userDb.findByEmail(email);
-        }
-
-        // Record/update device fingerprint. Trust the first fingerprint for this user.
-        if (visitorId) {
-            const isTrusted = !deviceFingerprintDb.hasTrustedDevice(user.id);
-            deviceFingerprintDb.create({
-                userId: user.id,
-                visitorId,
-                fingerprintHash: fingerprintHash || visitorId,
-                isTrusted
-            });
-        }
-
-        const accessToken = jwt.sign(
-            { id: user.id, email: user.email, role: user.role, tier: user.tier },
-            process.env.JWT_SECRET,
-            { expiresIn: process.env.JWT_EXPIRE || '7d' }
-        );
-        const refreshToken = jwt.sign(
-            { id: user.id, type: 'refresh' },
-            process.env.JWT_SECRET,
-            { expiresIn: process.env.JWT_REFRESH_EXPIRE || '30d' }
-        );
-
-        const expiresAt = new Date();
-        expiresAt.setDate(expiresAt.getDate() + 30);
-        sessionDb.create({ userId: user.id, refreshToken, expiresAt: expiresAt.toISOString() });
-
-        setAuthCookies(res, accessToken, refreshToken);
-
-        res.json({
-            success: true,
-            message: 'Demo login successful',
-            data: {
-                user: { id: user.id, email: user.email, name: user.name, role: user.role, tier: user.tier }
-            }
-        });
-    } catch (error) {
-        console.error('Demo login error:', error);
-        res.status(500).json({ success: false, error: 'Demo login failed' });
-    }
-});
-
-/**
- * @route   GET /api/v1/auth/devices
- * @desc    List device fingerprints for the authenticated user
- * @access  Private
- */
-router.get('/devices', authMiddleware, (req, res) => {
-    try {
-        const devices = deviceFingerprintDb.findByUser(req.user.id).map((d) => ({
-            id: d.id,
-            visitorId: d.visitor_id,
-            fingerprintHash: d.fingerprint_hash,
-            firstSeen: d.first_seen,
-            lastSeen: d.last_seen,
-            isTrusted: d.is_trusted === 1,
-            createdAt: d.created_at
-        }));
-
-        res.json({
-            success: true,
-            data: devices
-        });
-    } catch (error) {
-        console.error('List devices error:', error);
-        res.status(500).json({ success: false, error: 'Failed to list devices', code: 'DEVICES_ERROR' });
-    }
-});
-
-/**
- * @route   POST /api/v1/auth/trust-device
- * @desc    Mark a device fingerprint as trusted/untrusted
- * @access  Private
- */
-router.post('/trust-device', authMiddleware, (req, res) => {
-    try {
-        const { deviceId, trusted } = req.body;
-        if (!deviceId) {
-            return res.status(400).json({ success: false, error: 'deviceId is required', code: 'DEVICE_ID_MISSING' });
-        }
-
-        // Ensure the device belongs to the current user
-        const device = deviceFingerprintDb.findByUser(req.user.id).find((d) => String(d.id) === String(deviceId));
-        if (!device) {
-            return res.status(404).json({ success: false, error: 'Device not found', code: 'DEVICE_NOT_FOUND' });
-        }
-
-        deviceFingerprintDb.setTrusted(device.id, trusted !== false);
-        res.json({ success: true, message: trusted === false ? 'Device untrusted' : 'Device trusted' });
-    } catch (error) {
-        console.error('Trust device error:', error);
-        res.status(500).json({ success: false, error: 'Failed to update device trust', code: 'TRUST_DEVICE_ERROR' });
     }
 });
 
