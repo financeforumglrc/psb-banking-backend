@@ -56,6 +56,109 @@ async function clearPersonaData() {
   console.log(`[seedComprehensiveDemo] cleared ${idsToDelete.length} persona records.`);
 }
 
+function seedSinglePersona(persona, hashedPassword) {
+  // 1. User
+  userDb.create({
+    id: persona.id,
+    email: persona.email,
+    password: hashedPassword,
+    name: persona.name,
+    phone: persona.phone,
+    role: persona.role,
+    tier: persona.tier,
+    pan_number: persona.pan,
+    aadhar: persona.aadhar,
+  });
+
+  // 2. Accounts
+  const accounts = generateAccounts(persona);
+  const accountRows = accounts.map(acc => {
+    const result = bankingDb.createAccount({
+      userId: persona.id,
+      accountNumber: acc.accountNumber,
+      type: acc.type,
+      balance: acc.balance,
+      ifsc: acc.ifsc,
+      branch: acc.branch,
+      status: acc.status,
+    });
+    return { ...acc, dbId: result.lastInsertRowid };
+  });
+
+  // 3. Transactions (~60 per user)
+  const txns = generateTransactions(persona, accountRows, 60);
+  txns.forEach((t, idx) => {
+    bankingDb.createTransaction({
+      userId: persona.id,
+      fromAccount: t.fromAccount,
+      toAccount: t.toAccount,
+      type: t.type,
+      amount: t.amount,
+      description: t.description,
+      status: t.status,
+      referenceId: `TXN-${persona.id}-${idx}-${Date.now()}`,
+    });
+  });
+
+  // 4. Goals
+  const goals = generateGoals(persona);
+  goals.forEach(g => {
+    bankingDb.createGoal({
+      userId: persona.id,
+      name: g.name,
+      targetAmount: g.targetAmount,
+      currentAmount: g.currentAmount,
+      deadline: g.deadline,
+      goalType: g.goalType,
+      status: g.status,
+    });
+  });
+
+  // 5. Assets
+  const assets = generateAssets(persona);
+  assets.forEach(a => {
+    bankingDb.createAsset({
+      userId: persona.id,
+      name: a.name,
+      assetType: a.assetType,
+      value: a.value,
+      liquidity: a.liquidity,
+      returns: a.returns,
+    });
+  });
+
+  // 6. Audit logs
+  const auditLogs = generateAuditLogs(persona, accountRows, txns);
+  auditLogs.forEach(log => {
+    bankingDb.createAuditLog({
+      userId: persona.id,
+      action: log.action,
+      entityType: log.entityType,
+      entityId: log.entityId,
+      newValue: log.newValue,
+      ipAddress: log.ipAddress,
+      userAgent: log.userAgent,
+    });
+  });
+
+  // 7. Fraud events (inserted as audit logs with risky locations)
+  const fraudEvents = generateFraudEvents(persona, txns);
+  fraudEvents.forEach(event => {
+    bankingDb.createAuditLog({
+      userId: persona.id,
+      action: event.action,
+      entityType: event.entityType,
+      entityId: event.entityId,
+      newValue: event.newValue,
+      ipAddress: event.ipAddress,
+      userAgent: event.userAgent,
+    });
+  });
+
+  console.log(`[seedComprehensiveDemo] seeded ${persona.name}: ${accounts.length} accounts, ${txns.length} txns, ${goals.length} goals, ${assets.length} assets, ${auditLogs.length} audit logs, ${fraudEvents.length} fraud events`);
+  return { accounts, txns, goals, assets, auditLogs, fraudEvents };
+}
+
 async function seedComprehensiveDemo() {
   const existingById = db.prepare(`SELECT COUNT(*) as count FROM users WHERE id IN (${PERSONAS.map(() => '?').join(',')})`).all(...PERSONAS.map(p => p.id))[0].count;
   const existingByEmail = db.prepare(`SELECT COUNT(*) as count FROM users WHERE email IN (${PERSONAS.map(() => '?').join(',')})`).all(...PERSONAS.map(p => p.email))[0].count;
@@ -74,105 +177,7 @@ async function seedComprehensiveDemo() {
 
   const insertAll = db.transaction(() => {
     for (const persona of PERSONAS) {
-      // 1. User
-      userDb.create({
-        id: persona.id,
-        email: persona.email,
-        password: hashedPassword,
-        name: persona.name,
-        phone: persona.phone,
-        role: persona.role,
-        tier: persona.tier,
-        pan_number: persona.pan,
-        aadhar: persona.aadhar,
-      });
-
-      // 2. Accounts
-      const accounts = generateAccounts(persona);
-      const accountRows = accounts.map(acc => {
-        const result = bankingDb.createAccount({
-          userId: persona.id,
-          accountNumber: acc.accountNumber,
-          type: acc.type,
-          balance: acc.balance,
-          ifsc: acc.ifsc,
-          branch: acc.branch,
-          status: acc.status,
-        });
-        return { ...acc, dbId: result.lastInsertRowid };
-      });
-
-      // 3. Transactions (~60 per user)
-      const txns = generateTransactions(persona, accountRows, 60);
-      txns.forEach((t, idx) => {
-        bankingDb.createTransaction({
-          userId: persona.id,
-          fromAccount: t.fromAccount,
-          toAccount: t.toAccount,
-          type: t.type,
-          amount: t.amount,
-          description: t.description,
-          status: t.status,
-          referenceId: `TXN-${persona.id}-${idx}-${Date.now()}`,
-        });
-      });
-
-      // 4. Goals
-      const goals = generateGoals(persona);
-      goals.forEach(g => {
-        bankingDb.createGoal({
-          userId: persona.id,
-          name: g.name,
-          targetAmount: g.targetAmount,
-          currentAmount: g.currentAmount,
-          deadline: g.deadline,
-          goalType: g.goalType,
-          status: g.status,
-        });
-      });
-
-      // 5. Assets
-      const assets = generateAssets(persona);
-      assets.forEach(a => {
-        bankingDb.createAsset({
-          userId: persona.id,
-          name: a.name,
-          assetType: a.assetType,
-          value: a.value,
-          liquidity: a.liquidity,
-          returns: a.returns,
-        });
-      });
-
-      // 6. Audit logs
-      const auditLogs = generateAuditLogs(persona, accountRows, txns);
-      auditLogs.forEach(log => {
-        bankingDb.createAuditLog({
-          userId: persona.id,
-          action: log.action,
-          entityType: log.entityType,
-          entityId: log.entityId,
-          newValue: log.newValue,
-          ipAddress: log.ipAddress,
-          userAgent: log.userAgent,
-        });
-      });
-
-      // 7. Fraud events (inserted as audit logs with risky locations)
-      const fraudEvents = generateFraudEvents(persona, txns);
-      fraudEvents.forEach(event => {
-        bankingDb.createAuditLog({
-          userId: persona.id,
-          action: event.action,
-          entityType: event.entityType,
-          entityId: event.entityId,
-          newValue: event.newValue,
-          ipAddress: event.ipAddress,
-          userAgent: event.userAgent,
-        });
-      });
-
-      console.log(`[seedComprehensiveDemo] seeded ${persona.name}: ${accounts.length} accounts, ${txns.length} txns, ${goals.length} goals, ${assets.length} assets, ${auditLogs.length} audit logs, ${fraudEvents.length} fraud events`);
+      seedSinglePersona(persona, hashedPassword);
     }
   });
 
@@ -197,4 +202,4 @@ if (require.main === module) {
     });
 }
 
-module.exports = { seedComprehensiveDemo };
+module.exports = { seedComprehensiveDemo, seedSinglePersona };

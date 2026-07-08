@@ -39,6 +39,8 @@ const refreshLimiter = rateLimit({
 const { userDb, sessionDb } = require('../services/database');
 const { authMiddleware } = require('../middleware/auth');
 const { maskEmail, maskPhone, maskPan, maskAadhaar } = require('../lib/pii');
+const { PERSONAS, DEMO_PASSWORD } = require('../seeds/syntheticPersonas');
+const { seedSinglePersona } = require('../scripts/seedComprehensiveDemo');
 
 function formatUser(user) {
     return {
@@ -284,18 +286,27 @@ router.post('/demo-login', authLimiter, async (req, res) => {
 
         let user = userDb.findByEmail(email);
         if (!user) {
-            // Auto-create the demo persona if it does not exist (defensive fallback)
-            const bcrypt = require('bcryptjs');
-            user = {
-                id: require('crypto').randomUUID(),
-                email,
-                password: bcrypt.hashSync('SecureWealth@123', 12),
-                name: name || email.split('@')[0],
-                role: 'user',
-                tier: 'premium'
-            };
-            userDb.create(user);
-            user = userDb.findByEmail(email);
+            // On-demand seeding: if this is a known synthetic persona, create the full profile.
+            const persona = PERSONAS.find(p => p.email === email);
+            if (persona) {
+                console.log(`[demo-login] on-demand seeding persona ${persona.id} (${persona.email})`);
+                const hashedPassword = await bcrypt.hash(DEMO_PASSWORD, 10);
+                const insertPersona = require('../services/database').db.transaction(() => seedSinglePersona(persona, hashedPassword));
+                insertPersona();
+                user = userDb.findByEmail(email);
+            } else {
+                // Auto-create a bare demo user if it does not match a known persona (defensive fallback)
+                user = {
+                    id: require('crypto').randomUUID(),
+                    email,
+                    password: bcrypt.hashSync('SecureWealth@123', 12),
+                    name: name || email.split('@')[0],
+                    role: 'user',
+                    tier: 'premium'
+                };
+                userDb.create(user);
+                user = userDb.findByEmail(email);
+            }
         }
 
         userDb.updateLastLogin(user.id);
