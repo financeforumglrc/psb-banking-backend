@@ -93,10 +93,15 @@ app.use(helmet({
     }
 }));
 
+const defaultOrigins = process.env.NODE_ENV === 'production'
+    ? ['https://dsfinancial.in', 'https://www.dsfinancial.in', 'https://dsfinancial-47556.surge.sh', 'https://psb-securewealth-2026-new.surge.sh', 'https://psb-securewealth-frontend.onrender.com']
+    : ['http://localhost:3000', 'http://localhost:5173', 'http://127.0.0.1:5500', 'https://dsfinancial-47556.surge.sh', 'https://psb-securewealth-2026-new.surge.sh', 'https://psb-securewealth-frontend.onrender.com'];
+const corsOrigins = process.env.CORS_ORIGINS
+    ? [...defaultOrigins, ...process.env.CORS_ORIGINS.split(',').map(o => o.trim()).filter(Boolean)]
+    : defaultOrigins;
+
 app.use(cors({
-    origin: process.env.NODE_ENV === 'production' 
-        ? ['https://dsfinancial.in', 'https://www.dsfinancial.in', 'https://dsfinancial-47556.surge.sh', 'https://psb-securewealth-2026-new.surge.sh'] 
-        : ['http://localhost:3000', 'http://localhost:5173', 'http://127.0.0.1:5500', 'https://dsfinancial-47556.surge.sh', 'https://psb-securewealth-2026-new.surge.sh'],
+    origin: corsOrigins,
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
     allowedHeaders: process.env.NODE_ENV === 'production'
