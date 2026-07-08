@@ -41,6 +41,7 @@ const kycRoutes = require('./routes/kyc');
 const msmeRoutes = require('./routes/msme');
 const { seedAll } = require('./scripts/seedDemoData');
 const { seedComprehensiveDemo } = require('./scripts/seedComprehensiveDemo');
+const { db, dbPath } = require('./services/database');
 
 // Import middleware
 const { errorHandler } = require('./middleware/errorHandler');
@@ -194,12 +195,19 @@ app.get('/extracted_functions.js', (req, res) => {
 
 // Health check endpoint
 app.get('/api/v1/health', (req, res) => {
+    const userCount = (() => { try { return db.prepare('SELECT COUNT(*) as c FROM users').get().c; } catch { return -1; } })();
+    const accountCount = (() => { try { return db.prepare('SELECT COUNT(*) as c FROM bank_accounts').get().c; } catch { return -1; } })();
+    const txnCount = (() => { try { return db.prepare('SELECT COUNT(*) as c FROM transactions').get().c; } catch { return -1; } })();
     res.json({
         success: true,
         message: 'DS Financial API is running',
         version: '2.0.0',
         timestamp: new Date().toISOString(),
         environment: process.env.NODE_ENV,
+        dbPath: dbPath,
+        userCount,
+        accountCount,
+        txnCount,
         patents: {
             total: 47,
             phase1: 7,

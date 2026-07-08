@@ -1459,6 +1459,7 @@ function safeJsonParse(value, fallback) {
 
 module.exports = {
     db,
+    dbPath,
     userDb,
     calculationDb,
     sessionDb,
