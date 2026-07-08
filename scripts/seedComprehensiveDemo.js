@@ -24,37 +24,48 @@ const FORCE = process.env.FORCE_COMPREHENSIVE_SEED === '1' || process.env.FORCE_
 async function clearPersonaData() {
   console.log('[seedComprehensiveDemo] clearing existing persona data...');
   const ids = PERSONAS.map(p => p.id);
-  const placeholders = ids.map(() => '?').join(',');
+  const emails = PERSONAS.map(p => p.email);
+  const idPlaceholders = ids.map(() => '?').join(',');
+  const emailPlaceholders = emails.map(() => '?').join(',');
+
+  // Resolve ids to delete (by persona id OR email)
+  const rows = db.prepare(`SELECT id FROM users WHERE id IN (${idPlaceholders}) OR email IN (${emailPlaceholders})`).all(...ids, ...emails);
+  const idsToDelete = rows.map(r => r.id);
+  if (idsToDelete.length === 0) {
+    console.log('[seedComprehensiveDemo] no existing persona data to clear.');
+    return;
+  }
+  const delPlaceholders = idsToDelete.map(() => '?').join(',');
 
   // Cascading delete order to respect foreign keys
-  db.prepare(`DELETE FROM fraud_event_actions WHERE audit_log_id IN (SELECT id FROM audit_logs WHERE user_id IN (${placeholders}))`).run(...ids);
-  db.prepare(`DELETE FROM fraud_hops WHERE fraud_case_id IN (SELECT id FROM fraud_cases WHERE audit_log_id IN (SELECT id FROM audit_logs WHERE user_id IN (${placeholders})))`).run(...ids);
-  db.prepare(`DELETE FROM fraud_accounts WHERE fraud_case_id IN (SELECT id FROM fraud_cases WHERE audit_log_id IN (SELECT id FROM audit_logs WHERE user_id IN (${placeholders})))`).run(...ids);
-  db.prepare(`DELETE FROM fraud_notes WHERE fraud_case_id IN (SELECT id FROM fraud_cases WHERE audit_log_id IN (SELECT id FROM audit_logs WHERE user_id IN (${placeholders})))`).run(...ids);
-  db.prepare(`DELETE FROM fraud_cases WHERE audit_log_id IN (SELECT id FROM audit_logs WHERE user_id IN (${placeholders}))`).run(...ids);
-  db.prepare(`DELETE FROM audit_logs WHERE user_id IN (${placeholders})`).run(...ids);
-  db.prepare(`DELETE FROM transactions WHERE user_id IN (${placeholders})`).run(...ids);
-  db.prepare(`DELETE FROM goals WHERE user_id IN (${placeholders})`).run(...ids);
-  db.prepare(`DELETE FROM user_assets WHERE user_id IN (${placeholders})`).run(...ids);
-  db.prepare(`DELETE FROM bank_accounts WHERE user_id IN (${placeholders})`).run(...ids);
-  db.prepare(`DELETE FROM sessions WHERE user_id IN (${placeholders})`).run(...ids);
-  db.prepare(`DELETE FROM kyc_records WHERE user_id IN (${placeholders})`).run(...ids);
-  db.prepare(`DELETE FROM calculations WHERE user_id IN (${placeholders})`).run(...ids);
-  db.prepare(`DELETE FROM msme_applications WHERE user_id IN (${placeholders})`).run(...ids);
-  db.prepare(`DELETE FROM users WHERE id IN (${placeholders})`).run(...ids);
-  console.log('[seedComprehensiveDemo] cleared persona data.');
+  db.prepare(`DELETE FROM fraud_event_actions WHERE audit_log_id IN (SELECT id FROM audit_logs WHERE user_id IN (${delPlaceholders}))`).run(...idsToDelete);
+  db.prepare(`DELETE FROM fraud_hops WHERE fraud_case_id IN (SELECT id FROM fraud_cases WHERE audit_log_id IN (SELECT id FROM audit_logs WHERE user_id IN (${delPlaceholders})))`).run(...idsToDelete);
+  db.prepare(`DELETE FROM fraud_accounts WHERE fraud_case_id IN (SELECT id FROM fraud_cases WHERE audit_log_id IN (SELECT id FROM audit_logs WHERE user_id IN (${delPlaceholders})))`).run(...idsToDelete);
+  db.prepare(`DELETE FROM fraud_notes WHERE fraud_case_id IN (SELECT id FROM fraud_cases WHERE audit_log_id IN (SELECT id FROM audit_logs WHERE user_id IN (${delPlaceholders})))`).run(...idsToDelete);
+  db.prepare(`DELETE FROM fraud_cases WHERE audit_log_id IN (SELECT id FROM audit_logs WHERE user_id IN (${delPlaceholders}))`).run(...idsToDelete);
+  db.prepare(`DELETE FROM audit_logs WHERE user_id IN (${delPlaceholders})`).run(...idsToDelete);
+  db.prepare(`DELETE FROM transactions WHERE user_id IN (${delPlaceholders})`).run(...idsToDelete);
+  db.prepare(`DELETE FROM goals WHERE user_id IN (${delPlaceholders})`).run(...idsToDelete);
+  db.prepare(`DELETE FROM user_assets WHERE user_id IN (${delPlaceholders})`).run(...idsToDelete);
+  db.prepare(`DELETE FROM bank_accounts WHERE user_id IN (${delPlaceholders})`).run(...idsToDelete);
+  db.prepare(`DELETE FROM sessions WHERE user_id IN (${delPlaceholders})`).run(...idsToDelete);
+  db.prepare(`DELETE FROM kyc_records WHERE user_id IN (${delPlaceholders})`).run(...idsToDelete);
+  db.prepare(`DELETE FROM calculations WHERE user_id IN (${delPlaceholders})`).run(...idsToDelete);
+  db.prepare(`DELETE FROM msme_applications WHERE user_id IN (${delPlaceholders})`).run(...idsToDelete);
+  db.prepare(`DELETE FROM users WHERE id IN (${delPlaceholders})`).run(...idsToDelete);
+  console.log(`[seedComprehensiveDemo] cleared ${idsToDelete.length} persona records.`);
 }
 
 async function seedComprehensiveDemo() {
-  const anyExisting = db.prepare(`SELECT COUNT(*) as count FROM users WHERE id IN (${PERSONAS.map(() => '?').join(',')})`).all(...PERSONAS.map(p => p.id));
-  const existingCount = anyExisting[0].count;
+  const existingById = db.prepare(`SELECT COUNT(*) as count FROM users WHERE id IN (${PERSONAS.map(() => '?').join(',')})`).all(...PERSONAS.map(p => p.id))[0].count;
+  const existingByEmail = db.prepare(`SELECT COUNT(*) as count FROM users WHERE email IN (${PERSONAS.map(() => '?').join(',')})`).all(...PERSONAS.map(p => p.email))[0].count;
 
-  if (existingCount > 0 && !FORCE) {
-    console.log(`[seedComprehensiveDemo] ${existingCount} personas already seeded, skipping (set FORCE_SEED=1 to overwrite).`);
+  if ((existingById > 0 || existingByEmail > 0) && !FORCE) {
+    console.log(`[seedComprehensiveDemo] ${existingById} ids / ${existingByEmail} emails already exist, skipping (set FORCE_SEED=1 to overwrite).`);
     return { seeded: false, reason: 'already_exists' };
   }
 
-  if (FORCE && existingCount > 0) {
+  if (FORCE && (existingById > 0 || existingByEmail > 0)) {
     await clearPersonaData();
   }
 

@@ -8,6 +8,8 @@ services:
     envVars:
       - key: NODE_ENV
         value: production
+      - key: FORCE_SEED
+        value: "1"
       - key: PORT
         value: 10000
       - key: TRUST_PROXY
