@@ -1,0 +1,1 @@
+function e(){if(typeof window>`u`)return!1;let e=new URLSearchParams(window.location.search);return e.get(`judge`)===`true`||e.get(`judge`)===`1`}function t(e){return e>=1e7?`₹`+(e/1e7).toFixed(2)+` Cr`:e>=1e5?`₹`+(e/1e5).toFixed(1)+` L`:`₹`+e.toLocaleString(`en-IN`)}export{e as n,t};

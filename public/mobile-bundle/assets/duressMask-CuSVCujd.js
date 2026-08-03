@@ -1,0 +1,1 @@
+var e=45e3;function t(t,n){return n?e:t}function n(e,n){return`₹${t(e,n).toLocaleString()}`}function r(t,n){return n?`₹${e.toLocaleString()}`:`₹${(t/1e7).toFixed(2)}Cr`}export{n,r as t};
