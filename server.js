@@ -40,6 +40,7 @@ const bankingRoutes = require('./routes/banking');
 const businessRoutes = require('./routes/business');
 const kycRoutes = require('./routes/kyc');
 const msmeRoutes = require('./routes/msme');
+const mobileBundleRoutes = require('./routes/mobile-bundle');
 const { seedAll } = require('./scripts/seedDemoData');
 const { seedComprehensiveDemo } = require('./scripts/seedComprehensiveDemo');
 const { db, dbPath } = require('./services/database');
@@ -275,6 +276,7 @@ app.use('/api/v1/banking', authMiddleware, bankingRoutes);
 app.use('/api/v1/business', businessRoutes);
 app.use('/api/v1/kyc', authMiddleware, kycRoutes);
 app.use('/api/v1/msme', authMiddleware, msmeRoutes);
+app.use('/api/v1/mobile/bundle', mobileBundleRoutes);
 
 // Patent information endpoint
 app.get('/api/v1/patents', (req, res) => {
