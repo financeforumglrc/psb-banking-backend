@@ -495,5 +495,7 @@ module.exports = {
     generateWaterfallBridge,
     generateTornadoChart,
     runMonteCarlo,
-    generateSensitivityMatrix
+    generateSensitivityMatrix,
+    recalculateDCF,
+    triangularRandom
 };

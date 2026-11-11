@@ -269,5 +269,6 @@ module.exports = {
     applyScenario,
     generateScenarioComparison,
     createCustomScenario,
-    generateLBOSenarios
+    generateLBOSenarios,
+    generateRecommendation
 };

@@ -126,3 +126,54 @@ function computeDCF(model) {
 }
 
 module.exports = { computeDCF };
+
+/**
+ * DCF from explicit parameters (used by the modelling workspace and tests).
+ * Same FCFF methodology as computeDCF: NOPAT + DA − CAPEX − ΔWC, Gordon terminal.
+ * @param {Object} p { baseRevenue, growthRates, ebitdaMargin, taxRate, daPct, capexPct, wcPct, wacc, terminalGrowth, horizon, netDebt, shares }
+ */
+function computeDCFFromParams(p) {
+    const {
+        baseRevenue, growthRates, ebitdaMargin, taxRate, daPct,
+        capexPct, wcPct, wacc, terminalGrowth, horizon, netDebt, shares
+    } = p;
+
+    if (wacc <= terminalGrowth || horizon < 1) {
+        return { valid: false, perShareValue: NaN };
+    }
+
+    // FCFF = rev × [ebitdaMargin×(1−tax) + daPct×tax − capexPct] − Δrev × wcPct
+    const fcff = (rev, prevRev) =>
+        rev * (ebitdaMargin * (1 - taxRate) + daPct * taxRate - capexPct) - (rev - prevRev) * wcPct;
+
+    let rev = baseRevenue;
+    const forecast = [];
+    for (let year = 1; year <= horizon; year++) {
+        const prevRev = rev;
+        rev = rev * (1 + (growthRates[year - 1] || 0));
+        forecast.push({ year, revenue: rev, fcff: fcff(rev, prevRev) });
+    }
+
+    let pvFcff = 0;
+    for (let i = 0; i < horizon; i++) {
+        pvFcff += forecast[i].fcff / Math.pow(1 + wacc, i + 1);
+    }
+
+    const terminalValue = (forecast[horizon - 1].fcff * (1 + terminalGrowth)) / (wacc - terminalGrowth);
+    const pvTerminal = terminalValue / Math.pow(1 + wacc, horizon);
+    const enterpriseValue = pvFcff + pvTerminal;
+    const equityValue = enterpriseValue - netDebt;
+    const perShareValue = equityValue / shares;
+
+    return { valid: true, forecast, terminalValue, pvTerminal, pvFcff, enterpriseValue, equityValue, perShareValue };
+}
+
+/**
+ * Span-correct CAGR: (end/start)^(1/periods) − 1. Returns 0 for invalid inputs.
+ */
+function cagr(end, start, periods) {
+    if (!start || start <= 0 || end <= 0 || !periods || periods <= 0) return 0;
+    return Math.pow(end / start, 1 / periods) - 1;
+}
+
+module.exports = { computeDCF, computeDCFFromParams, cagr };
