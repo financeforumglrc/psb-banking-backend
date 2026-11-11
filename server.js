@@ -81,19 +81,35 @@ app.use(helmet({
     contentSecurityPolicy: {
         directives: {
             defaultSrc: ["'self'"],
-            styleSrc: ["'self'", "'unsafe-inline'", "https://cdnjs.cloudflare.com", "https://fonts.googleapis.com"],
-            scriptSrc: ["'self'", "'unsafe-inline'"],
+            styleSrc: ["'self'", "'unsafe-inline'", "https://cdnjs.cloudflare.com", "https://fonts.googleapis.com", "https://fonts.gstatic.com"],
+            scriptSrc: ["'self'", "'unsafe-inline'", "'wasm-unsafe-eval'", "https://checkout.razorpay.com", "https://cdnjs.cloudflare.com", "https://cdn.jsdelivr.net", "https://unpkg.com"],
+            workerSrc: ["'self'", "blob:", "https://cdnjs.cloudflare.com"],
             fontSrc: ["'self'", "https://fonts.gstatic.com", "https://cdnjs.cloudflare.com"],
-            imgSrc: ["'self'", "data:", "https:"],
-            connectSrc: ["'self'", "https://api.gst.gov.in", "https://openrouter.ai", "https://api.groq.com", "https://api-inference.huggingface.co", "https://api.anthropic.com", "https://generativelanguage.googleapis.com", "https://api.openai.com"]
+            imgSrc: ["'self'", "data:", "https:", "blob:"],
+            connectSrc: ["'self'", "https://api.gst.gov.in", "https://openrouter.ai", "https://api.groq.com", "https://api-inference.huggingface.co", "https://api.anthropic.com", "https://generativelanguage.googleapis.com", "https://api.openai.com", "wss://*"],
+            frameSrc: ["'self'", "https://checkout.razorpay.com"],
+            objectSrc: ["'none'"],
+            upgradeInsecureRequests: []
         }
     },
     hsts: {
         maxAge: 31536000,
         includeSubDomains: true,
         preload: true
-    }
+    },
+    referrerPolicy: { policy: 'strict-origin-when-cross-origin' },
+    noSniff: true,
+    xssFilter: true,
+    hidePoweredBy: true,
+    frameguard: { action: 'deny' }
 }));
+
+// Permissions-Policy (helmet v7.1.0 does not emit this; set explicitly).
+// Restricts powerful browser features this site does not need.
+app.use((req, res, next) => {
+    res.setHeader('Permissions-Policy', "camera=(), microphone=(), geolocation=(), payment=(self)");
+    next();
+});
 
 const defaultOrigins = process.env.NODE_ENV === 'production'
     ? ['https://dsfinancial.in', 'https://www.dsfinancial.in', 'https://dsfinancial-47556.surge.sh', 'https://psb-securewealth-2026-new.surge.sh', 'https://psb-securewealth-frontend.onrender.com']
@@ -336,6 +352,40 @@ app.get('/api/v1/patents', (req, res) => {
             ]
         }
     });
+});
+
+// Storage status: reports whether user data will survive redeploys.
+// Durable = PostgreSQL persistence adapter connected. Ephemeral = SQLite only
+// (data on Render free tier's filesystem is wiped on every redeploy).
+app.get('/api/v1/storage', async (req, res) => {
+    try {
+        const persistence = require('./services/database');
+        // pgAdapter may not be wired in all builds; handle gracefully.
+        const pgAdapter = persistence.pgAdapter;
+        const pgEnabled = Boolean(pgAdapter && typeof pgAdapter.isEnabled === 'function' && pgAdapter.isEnabled());
+        const fs = require('fs');
+        const sqlitePath = dbPath;
+        let sizeBytes = null;
+        try { sizeBytes = fs.statSync(sqlitePath).size; } catch (_) {}
+
+        let pgConnected = false;
+        if (pgEnabled) {
+            try { await pgAdapter.getPool().query('SELECT 1'); pgConnected = true; } catch (_) {}
+        }
+
+        res.json({
+            success: true,
+            mode: pgEnabled && pgConnected ? 'durable' : 'ephemeral',
+            engine: pgEnabled ? 'postgresql' : 'sqlite',
+            postgresConnected: pgEnabled ? pgConnected : false,
+            sqlite: { path: sqlitePath, sizeBytes },
+            note: pgEnabled && pgConnected
+                ? 'Data survives redeploys via PostgreSQL.'
+                : 'SQLite-only: data WILL be lost on the next redeploy. Link a free Render PostgreSQL database (DATABASE_URL) for durable storage.'
+        });
+    } catch (err) {
+        res.status(503).json({ success: false, error: 'Storage status unavailable', detail: err.message });
+    }
 });
 
 // Static file serving - ONLY serve from public directory, never parent dirs
