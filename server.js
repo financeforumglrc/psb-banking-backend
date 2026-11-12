@@ -497,3 +497,18 @@ if (require.main === module) {
 }
 
 module.exports = app;
+
+// ---- Graceful shutdown: flush the Postgres mutation queue before exit ----
+// Prevents losing the last ~15s of queued writes when Render redeploys/stops.
+const { pgAdapter: pgAdapterRef, db: dbRef } = require('./services/database');
+function shutdown(signal) {
+    logger.info(`${signal} received - flushing Postgres queue before shutdown...`);
+    Promise.resolve()
+        .then(() => (pgAdapterRef && typeof pgAdapterRef.isEnabled === 'function' && pgAdapterRef.isEnabled()
+            ? pgAdapterRef.flushAndShutdown(dbRef)
+            : null))
+        .catch((err) => logger.error('Postgres shutdown flush failed:', err.message))
+        .finally(() => process.exit(0));
+}
+process.on('SIGTERM', () => shutdown('SIGTERM'));
+process.on('SIGINT', () => shutdown('SIGINT'));
