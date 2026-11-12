@@ -145,6 +145,48 @@ const LOAD_ORDER = [
     'payment_orders'
 ];
 
+async function backfillToPostgres(sqliteDb, table) {
+    const pg = getPool();
+    if (!pg) return 0;
+    const localRows = sqliteDb.prepare(`SELECT * FROM ${table}`).all();
+    if (localRows.length === 0) return 0;
+
+    const { rows: colRows } = await pg.query(
+        'SELECT column_name, data_type FROM information_schema.columns WHERE table_name = $1',
+        [table]
+    );
+    const colTypes = {};
+    for (const c of colRows) colTypes[c.column_name] = c.data_type;
+
+    let ok = 0;
+    let failed = 0;
+    for (const row of localRows) {
+        const cols = Object.keys(row);
+        const colList = cols.map((c) => `"${c}"`).join(',');
+        const placeholders = cols.map((_, i) => `$${i + 1}`).join(',');
+        const values = cols.map((c) => {
+            const v = row[c];
+            const t = (colTypes[c] || '').toLowerCase();
+            if (v === null || v === undefined) return null;
+            if (t === 'boolean') return Boolean(v);
+            if (t === 'json' || t === 'jsonb') {
+                if (typeof v === 'string') { try { return JSON.parse(v); } catch (_) { return v; } }
+                return v;
+            }
+            return v;
+        });
+        try {
+            await pg.query(`INSERT INTO ${table} (${colList}) VALUES (${placeholders}) ON CONFLICT DO NOTHING`, values);
+            ok++;
+        } catch (err) {
+            failed++;
+            if (failed <= 3) console.error(`  ${table}: backfill row failed: ${err.message}`);
+        }
+    }
+    console.log(`  ${table}: backfilled ${ok} rows to Postgres (${failed} skipped)`);
+    return ok;
+}
+
 async function loadFromPostgres(sqliteDb) {
     const pg = getPool();
     if (!pg) return;
@@ -158,7 +200,11 @@ async function loadFromPostgres(sqliteDb) {
 
             const { rows } = await pg.query(`SELECT * FROM ${table}`);
             if (rows.length === 0) {
-                console.log(`  ${table}: 0 rows restored`);
+                // Postgres empty for this table: backfill from SQLite so pre-existing
+                // data (created before DATABASE_URL was set) is preserved in Postgres
+                // instead of being lost on the next redeploy.
+                const backfilled = await backfillToPostgres(sqliteDb, table);
+                if (backfilled === 0) console.log(`  ${table}: 0 rows restored`);
                 continue;
             }
 
