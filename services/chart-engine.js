@@ -5,6 +5,7 @@
  */
 
 const { detectAnomalies } = require('./anomaly-detector');
+const { computeDCFFromParams } = require('./dcf-engine');
 
 // ============================================
 // FOOTBALL FIELD VALUATION CHART
@@ -32,9 +33,16 @@ function generateFootballField(model) {
     // Trading Comps
     if (comps && comps.comparable_companies) {
         const medians = calculateCompsMedians(comps.comparable_companies);
-        const ev_ebitda = medians.ev_ebitda ? (medians.ev_ebitda * assumptions.ebitda_margin * assumptions.revenue_growth * shares) / shares : null;
-        const ev_sales = medians.ev_sales ? (medians.ev_sales * assumptions.revenue_growth * shares) / shares : null;
-        const pe = medians.pe ? (medians.pe * assumptions.net_income_margin * assumptions.revenue_growth * shares) / shares : null;
+        // Per-share comp value = (median multiple × metric − netDebt) / shares.
+        // Metrics are revenue-based (revenue, EBITDA, net earnings) so the comps
+        // scale with the business, NOT with the growth rate.
+        const revenue = assumptions.revenue_base || 0;
+        const ebitda = revenue * (assumptions.ebitda_margin || 0);
+        const earnings = revenue * ((assumptions.ebitda_margin || 0) - (assumptions.d_and_a_pct || 0.02)) * (1 - (assumptions.tax_rate || 0));
+        const netDebt = assumptions.net_debt || 0;
+        const ev_ebitda = medians.ev_ebitda ? (medians.ev_ebitda * ebitda - netDebt) / shares : null;
+        const ev_sales = medians.ev_sales ? (medians.ev_sales * revenue - netDebt) / shares : null;
+        const pe = medians.pe ? (medians.pe * earnings) / shares : null;
         
         if (ev_ebitda) {
             ranges.push({
@@ -72,7 +80,10 @@ function generateFootballField(model) {
     if (precedent_transactions && precedent_transactions.transactions) {
         const txMedians = calculateTransactionMedians(precedent_transactions.transactions);
         if (txMedians.ev_ebitda) {
-            const txVal = (txMedians.ev_ebitda * assumptions.ebitda_margin * assumptions.revenue_growth * shares) / shares;
+            const revenue = assumptions.revenue_base || 0;
+            const ebitda = revenue * (assumptions.ebitda_margin || 0);
+            const netDebt = assumptions.net_debt || 0;
+            const txVal = (txMedians.ev_ebitda * ebitda - netDebt) / shares;
             ranges.push({
                 method: 'Precedent Transactions',
                 low: txVal * 0.80,
@@ -404,49 +415,31 @@ function triangularRandom(min, mode, max) {
 }
 
 function recalculateDCF(assumptions) {
-    const { 
-        revenue_base, revenue_growth, projection_years, 
+    const {
+        revenue_base, revenue_growth, projection_years,
         ebitda_margin, tax_rate, wacc, terminal_growth_rate,
         d_and_a_pct, capex_pct_revenue, working_capital_pct_revenue,
-        net_debt, shares_outstanding 
+        net_debt, shares_outstanding
     } = assumptions;
-    
-    let fcffSum = 0;
-    let revenue = revenue_base;
-    
-    for (let year = 1; year <= projection_years; year++) {
-        revenue *= (1 + revenue_growth);
-        const ebitda = revenue * ebitda_margin;
-        const dna = revenue * (d_and_a_pct || 0.02);
-        const ebit = ebitda - dna;
-        const taxes = Math.max(0, ebit * tax_rate);
-        const nopat = ebit - taxes;
-        const capex = revenue * (capex_pct_revenue || 0.05);
-        const wcChange = revenue * (working_capital_pct_revenue || 0.03) * revenue_growth;
-        const fcff = nopat + dna - capex - wcChange;
-        
-        fcffSum += fcff / Math.pow(1 + wacc, year);
-    }
-    
-    // Terminal value
-    const terminalRevenue = revenue * (1 + revenue_growth);
-    const terminalEBITDA = terminalRevenue * ebitda_margin;
-    const terminalDNA = terminalRevenue * (d_and_a_pct || 0.02);
-    const terminalEBIT = terminalEBITDA - terminalDNA;
-    const terminalTaxes = Math.max(0, terminalEBIT * tax_rate);
-    const terminalNOPAT = terminalEBIT - terminalTaxes;
-    const terminalCapEx = terminalRevenue * (capex_pct_revenue || 0.05);
-    const terminalWCChange = terminalRevenue * (working_capital_pct_revenue || 0.03) * revenue_growth;
-    const terminalFCFF = terminalNOPAT + terminalDNA - terminalCapEx - terminalWCChange;
-    
-    const terminalValue = terminalFCFF * (1 + terminal_growth_rate) / (wacc - terminal_growth_rate);
-    const pvTerminal = terminalValue / Math.pow(1 + wacc, projection_years);
-    
-    const enterpriseValue = fcffSum + pvTerminal;
-    const equityValue = enterpriseValue - (net_debt || 0);
-    const perShare = equityValue / (shares_outstanding || 1);
-    
-    return perShare;
+
+    // Delegate to the precise FCFF core so per-share value matches the DCF
+    // golden case and wacc <= terminal growth returns NaN (not a bogus number).
+    const result = computeDCFFromParams({
+        baseRevenue: revenue_base,
+        growthRates: Array(projection_years || 5).fill(revenue_growth || 0),
+        ebitdaMargin: ebitda_margin,
+        taxRate: tax_rate,
+        daPct: d_and_a_pct || 0.02,
+        capexPct: capex_pct_revenue || 0.05,
+        wcPct: working_capital_pct_revenue || 0.03,
+        wacc,
+        terminalGrowth: terminal_growth_rate,
+        horizon: projection_years || 5,
+        netDebt: net_debt || 0,
+        shares: shares_outstanding || 1,
+    });
+
+    return result.valid ? result.perShareValue : NaN;
 }
 
 function calculateCompsMedians(companies) {

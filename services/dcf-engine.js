@@ -1,6 +1,7 @@
 /**
- * Simplified DCF engine — computes intrinsic value from model inputs at runtime.
- * Uses FCFF methodology with Gordon Growth terminal value.
+ * DCF engine — computes intrinsic value from model inputs at runtime.
+ * Uses FCFF methodology with Gordon Growth terminal value. computeDCF (model
+ * JSON adapter) and computeDCFFromParams (explicit params) share one precise core.
  */
 
 /**
@@ -21,111 +22,62 @@ function computeDCF(model) {
     const revenue = getVal('revenue');
     const ebitda = getVal('ebitda') || getVal('operating_profit');
     const depreciation = getVal('depreciation');
-    const pat = getVal('pat');
 
-    if (!revenue || !ebitda) {
-        return {
-            enterprise_value: { value: 0, unit: 'INR_CR' },
-            equity_value: { value: 0, unit: 'INR_CR' },
-            per_share_value: { value: 0, unit: 'INR' },
-            _computed: true,
-            _error: 'Missing base-year revenue or EBITDA',
-        };
-    }
+    const invalid = (msg) => ({
+        enterprise_value: { value: 0, unit: 'INR_CR' },
+        equity_value: { value: 0, unit: 'INR_CR' },
+        per_share_value: { value: 0, unit: 'INR' },
+        _computed: true,
+        _error: msg,
+    });
 
-    const ebit = ebitda - depreciation;
-    const taxRate = (settings.tax_rate?.value || 25.17) / 100;
-    const nopat = ebit * (1 - taxRate);
+    if (!revenue || !ebitda) return invalid('Missing base-year revenue or EBITDA');
 
-    // ---- Assumptions ----
-    const wacc = (dcf.wacc?.value || 10.5) / 100;
-    const g = (dcf.terminal_growth?.value || 3.5) / 100;
     const horizon = dcf.horizon_years || 5;
-
-    if (wacc <= g) {
-        return {
-            enterprise_value: { value: 0, unit: 'INR_CR' },
-            equity_value: { value: 0, unit: 'INR_CR' },
-            per_share_value: { value: 0, unit: 'INR' },
-            _computed: true,
-            _error: 'WACC must be greater than terminal growth rate',
-        };
-    }
-
-    // ---- Balance sheet bridge ----
-    const totalDebt = bsData.total_debt || 0;
-    const cash = bsData.cash_and_investments || 0;
-    const shares = bsData.shares_outstanding || 1;
-    const netDebt = totalDebt - cash;
-
-    // ---- Forecast assumptions (estimates) ----
     const revenueGrowth = estimates.revenue_growth || 0.08;
-    const capexPct = estimates.capex_pct || 0.05;
-    const wcPct = estimates.working_capital_pct || 0.03;
+    const wacc = (dcf.wacc?.value || 10.5) / 100;
+    const terminalGrowth = (dcf.terminal_growth?.value || 3.5) / 100;
 
-    // ---- Build FCFF forecast ----
-    const ebitdaMargin = ebitda / revenue;
-    const daPct = depreciation / revenue;
+    if (wacc <= terminalGrowth) return invalid('WACC must be greater than terminal growth rate');
 
-    let fcffs = [];
-    let rev = revenue;
-    for (let year = 1; year <= horizon; year++) {
-        rev = rev * (1 + revenueGrowth);
-        const yearEbitda = rev * ebitdaMargin;
-        const yearDa = rev * daPct;
-        const yearEbit = yearEbitda - yearDa;
-        const yearNopat = yearEbit * (1 - taxRate);
-        const yearCapex = rev * capexPct;
-        const prevRev = rev / (1 + revenueGrowth);
-        const yearWcChange = (rev - prevRev) * wcPct;
-        const yearFcff = yearNopat + yearDa - yearCapex - yearWcChange;
-        fcffs.push({
-            year,
-            revenue: Math.round(rev),
-            ebitda: Math.round(yearEbitda),
-            nopat: Math.round(yearNopat),
-            depreciation: Math.round(yearDa),
-            capex: Math.round(yearCapex),
-            wc_change: Math.round(yearWcChange),
-            fcff: Math.round(yearFcff),
-        });
-    }
+    // Delegate to the precise FCFF core so the model JSON adapter and the
+    // parameter API produce identical, unrounded values.
+    const result = computeDCFFromParams({
+        baseRevenue: revenue,
+        growthRates: Array(horizon).fill(revenueGrowth),
+        ebitdaMargin: ebitda / revenue,
+        taxRate: (settings.tax_rate?.value || 25.17) / 100,
+        daPct: depreciation / revenue,
+        capexPct: estimates.capex_pct || 0.05,
+        wcPct: estimates.working_capital_pct || 0.03,
+        wacc,
+        terminalGrowth,
+        horizon,
+        netDebt: (bsData.total_debt || 0) - (bsData.cash_and_investments || 0),
+        shares: bsData.shares_outstanding || 1,
+    });
 
-    // ---- Terminal Value (Gordon Growth) ----
-    const terminalFcff = fcffs[horizon - 1].fcff * (1 + g);
-    const terminalValue = terminalFcff / (wacc - g);
-
-    // ---- Discount to Present ----
-    let pvFcff = 0;
-    for (let i = 0; i < horizon; i++) {
-        pvFcff += fcffs[i].fcff / Math.pow(1 + wacc, i + 1);
-    }
-    const pvTerminal = terminalValue / Math.pow(1 + wacc, horizon);
-    const enterpriseValue = pvFcff + pvTerminal;
-    const equityValue = enterpriseValue - netDebt;
-    const perShareValue = equityValue / shares;
+    if (!result.valid) return invalid('WACC must be greater than terminal growth rate');
 
     return {
-        enterprise_value: { value: Math.round(enterpriseValue), unit: 'INR_CR' },
-        equity_value: { value: Math.round(equityValue), unit: 'INR_CR' },
-        per_share_value: { value: Math.round(perShareValue), unit: 'INR' },
+        enterprise_value: { value: result.enterpriseValue, unit: 'INR_CR' },
+        equity_value: { value: result.equityValue, unit: 'INR_CR' },
+        per_share_value: { value: result.perShareValue, unit: 'INR' },
         _computed: true,
-        _method: 'simplified_fcff',
+        _method: 'fcff',
         _details: {
-            base_year: { revenue, ebitda, depreciation, ebit, nopat: Math.round(nopat) },
-            assumptions: { wacc: wacc * 100, g: g * 100, tax_rate: taxRate * 100, horizon },
-            estimates: { revenue_growth: revenueGrowth, capex_pct: capexPct, wc_pct: wcPct },
-            forecast: fcffs,
-            terminal_value: Math.round(terminalValue),
-            pv_fcff: Math.round(pvFcff),
-            pv_terminal: Math.round(pvTerminal),
-            net_debt: Math.round(netDebt),
-            shares_outstanding: shares,
+            base_year: { revenue, ebitda, depreciation },
+            assumptions: { wacc: wacc * 100, g: terminalGrowth * 100, tax_rate: (settings.tax_rate?.value || 25.17), horizon },
+            estimates: { revenue_growth: revenueGrowth, capex_pct: estimates.capex_pct || 0.05, wc_pct: estimates.working_capital_pct || 0.03 },
+            forecast: result.forecast,
+            terminal_value: result.terminalValue,
+            pv_fcff: result.pvFcff,
+            pv_terminal: result.pvTerminal,
+            net_debt: (bsData.total_debt || 0) - (bsData.cash_and_investments || 0),
+            shares_outstanding: bsData.shares_outstanding || 1,
         },
     };
 }
-
-module.exports = { computeDCF };
 
 /**
  * DCF from explicit parameters (used by the modelling workspace and tests).

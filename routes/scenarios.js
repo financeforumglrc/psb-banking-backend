@@ -29,29 +29,6 @@ router.post('/compare', (req, res) => {
     }
 });
 
-// POST /api/v1/scenarios/:scenarioKey
-// Apply a specific scenario
-router.post('/:scenarioKey', (req, res) => {
-    try {
-        const { scenarioKey } = req.params;
-        const { model } = req.body;
-        
-        if (!model || !model.assumptions) {
-            return res.status(400).json({ success: false, error: 'Model data required' });
-        }
-        
-        const data = applyScenario(model, scenarioKey);
-        if (!data) {
-            return res.status(400).json({ success: false, error: `Unknown scenario: ${scenarioKey}` });
-        }
-        
-        res.json({ success: true, data });
-    } catch (error) {
-        console.error('Scenario apply error:', error);
-        res.status(500).json({ success: false, error: error.message });
-    }
-});
-
 // POST /api/v1/scenarios/custom
 // Create a custom scenario
 router.post('/custom', (req, res) => {
@@ -87,6 +64,29 @@ router.post('/lbo', (req, res) => {
         res.json({ success: true, data });
     } catch (error) {
         console.error('LBO scenario error:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+// POST /api/v1/scenarios/:scenarioKey
+// Apply a specific scenario (catch-all — MUST be defined after the specific routes)
+router.post('/:scenarioKey', (req, res) => {
+    try {
+        const { scenarioKey } = req.params;
+        const { model } = req.body;
+        
+        if (!model || !model.assumptions) {
+            return res.status(400).json({ success: false, error: 'Model data required' });
+        }
+        
+        const data = applyScenario(model, scenarioKey);
+        if (!data) {
+            return res.status(400).json({ success: false, error: `Unknown scenario: ${scenarioKey}` });
+        }
+        
+        res.json({ success: true, data });
+    } catch (error) {
+        console.error('Scenario apply error:', error);
         res.status(500).json({ success: false, error: error.message });
     }
 });
