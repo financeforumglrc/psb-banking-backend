@@ -142,7 +142,26 @@ const LOAD_ORDER = [
     'audit_logs',
     'device_fingerprints',
     'otp_attempts',
-    'payment_orders'
+    'payment_orders',
+    'ai_cache',
+    'whitelisted_ips',
+    'fraud_rules',
+    'fraud_cases',
+    'fraud_event_actions',
+    'fraud_hops',
+    'fraud_accounts',
+    'fraud_notes',
+    'market_instruments',
+    'market_prices',
+    'rbi_macro_data',
+    'forex_rates',
+    'external_datasets',
+    'user_asset_links',
+    'msme_applications',
+    'msme_credit_scores',
+    'msme_documents',
+    'msme_offers',
+    'msme_audit_logs'
 ];
 
 async function backfillToPostgres(sqliteDb, table) {
