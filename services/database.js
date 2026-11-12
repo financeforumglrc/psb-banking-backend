@@ -757,8 +757,10 @@ const REQUIRE_POSTGRES = process.env.REQUIRE_POSTGRES === 'true';
 const ready = (async () => {
     if (!pgAdapter.isEnabled()) {
         if (REQUIRE_POSTGRES) {
-            console.error('FATAL: REQUIRE_POSTGRES=true but DATABASE_URL is not set.');
-            process.exit(1);
+            // Operator explicitly wants durable storage but DATABASE_URL is missing.
+            // Warn loudly rather than crash the service (avoids taking the site down
+            // mid-migration); durability activates as soon as DATABASE_URL is set.
+            console.error('WARNING: REQUIRE_POSTGRES=true but DATABASE_URL is not set. Data will be LOST on the next redeploy. Set DATABASE_URL on Render to enable durable storage.');
         }
         console.log('Postgres durability adapter disabled (DATABASE_URL not set) - SQLite-only (ephemeral).');
         return;
@@ -771,10 +773,10 @@ const ready = (async () => {
         console.log('Postgres durability adapter connected - durable storage enabled.');
     } catch (err) {
         if (REQUIRE_POSTGRES) {
-            console.error('FATAL: REQUIRE_POSTGRES=true but Postgres init failed:', err.message);
-            process.exit(1);
+            console.error('WARNING: REQUIRE_POSTGRES=true but Postgres init failed:', err.message, '- falling back to SQLite (data at risk on redeploy).');
+        } else {
+            console.error('Postgres durability adapter init failed (falling back to SQLite):', err.message);
         }
-        console.error('Postgres durability adapter init failed (falling back to SQLite):', err.message);
     }
 })();
 
