@@ -6,6 +6,7 @@
 const sqlite3 = require('better-sqlite3');
 const path = require('path');
 const fs = require('fs');
+const pgAdapter = require('./pgAdapter');
 const { maskEmail, maskPhone, maskPan, maskAadhaar } = require('../lib/pii');
 
 const dbPath = process.env.DATABASE_PATH || process.env.DB_PATH || path.join(__dirname, '..', 'data', 'ds_financial.db');
@@ -747,6 +748,35 @@ const sessionDb = {
 };
 
 initializeDatabase();
+
+// ---- Postgres durability adapter (hybrid storage) ----
+// When DATABASE_URL is set: hydrate SQLite from Postgres, record every mutation
+// via triggers in a queue, and flush to Postgres periodically + on shutdown.
+// Without it the backend is SQLite-only and data is lost on every redeploy.
+const REQUIRE_POSTGRES = process.env.REQUIRE_POSTGRES === 'true';
+const ready = (async () => {
+    if (!pgAdapter.isEnabled()) {
+        if (REQUIRE_POSTGRES) {
+            console.error('FATAL: REQUIRE_POSTGRES=true but DATABASE_URL is not set.');
+            process.exit(1);
+        }
+        console.log('Postgres durability adapter disabled (DATABASE_URL not set) - SQLite-only (ephemeral).');
+        return;
+    }
+    try {
+        await pgAdapter.ensureSchema();
+        await pgAdapter.loadFromPostgres(db);
+        pgAdapter.installTriggers(db);
+        pgAdapter.startAutoFlush(db);
+        console.log('Postgres durability adapter connected - durable storage enabled.');
+    } catch (err) {
+        if (REQUIRE_POSTGRES) {
+            console.error('FATAL: REQUIRE_POSTGRES=true but Postgres init failed:', err.message);
+            process.exit(1);
+        }
+        console.error('Postgres durability adapter init failed (falling back to SQLite):', err.message);
+    }
+})();
 
 const aiRunsDb = {
     create: (run) => {
@@ -1682,5 +1712,7 @@ module.exports = {
     marketDb,
     fraudDb,
     msmeDb,
-    safeJsonParse
+    safeJsonParse,
+    pgAdapter,
+    ready
 };
